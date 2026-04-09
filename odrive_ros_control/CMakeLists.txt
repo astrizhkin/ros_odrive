@@ -9,14 +9,15 @@ endif()
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   hardware_interface
+  controller_manager
   pluginlib
 )
 
 # Declare catkin package
 catkin_package(
-  INCLUDE_DIRS ../odrive_base/include
+  INCLUDE_DIRS include ../odrive_base/include
   LIBRARIES odrive_ros_control_plugin
-  CATKIN_DEPENDS roscpp hardware_interface pluginlib
+  CATKIN_DEPENDS roscpp hardware_interface controller_manager pluginlib
 )
 
 include_directories(
@@ -30,6 +31,23 @@ add_library(odrive_ros_control_plugin SHARED
   ../odrive_base/src/epoll_event_loop.cpp
   ../odrive_base/src/socket_can.cpp
   src/odrive_hardware_interface.cpp
+)
+
+add_executable(odrive_ros_control_node 
+  src/main.cpp 
+  ../odrive_base/src/epoll_event_loop.cpp
+  ../odrive_base/src/socket_can.cpp
+  src/odrive_hardware_interface.cpp)
+target_compile_features(odrive_ros_control_node PRIVATE cxx_std_17)
+target_link_libraries(odrive_ros_control_node
+  ${catkin_LIBRARIES}
+)
+add_dependencies(odrive_ros_control_node
+  odrive_ros_control_plugin
+)
+
+install(TARGETS odrive_ros_control_node
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 target_compile_features(odrive_ros_control_plugin PRIVATE cxx_std_17)
