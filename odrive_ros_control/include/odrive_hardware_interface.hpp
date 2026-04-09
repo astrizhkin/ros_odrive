@@ -66,12 +66,12 @@ struct Axis {
     bool torque_input_enabled_ = false;
 
     template <typename T>
-    void send(const T& msg) const {
+    bool send(const T& msg) const {
         struct can_frame frame;
         frame.can_id  = node_id_ << 5 | msg.cmd_id;
         frame.can_dlc = msg.msg_length;
         msg.encode_buf(frame.data);
-        can_intf_->send_can_frame(frame);
+        return can_intf_->send_can_frame(frame);
     }
 };
 

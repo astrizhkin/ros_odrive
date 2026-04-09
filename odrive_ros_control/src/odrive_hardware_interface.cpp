@@ -100,21 +100,25 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 
 void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Duration& /*period*/) {
     for (auto& axis : axes_) {
+        bool sent = true;
         if (axis.pos_input_enabled_) {
             Set_Input_Pos_msg_t msg;
             msg.Input_Pos   = axis.pos_setpoint_ / (2 * M_PI);
             msg.Vel_FF      = axis.vel_input_enabled_    ? (axis.vel_setpoint_ / (2 * M_PI)) : 0.0f;
             msg.Torque_FF   = axis.torque_input_enabled_ ? axis.torque_setpoint_              : 0.0f;
-            axis.send(msg);
+            sent = axis.send(msg);
         } else if (axis.vel_input_enabled_) {
             Set_Input_Vel_msg_t msg;
             msg.Input_Vel        = axis.vel_setpoint_ / (2 * M_PI);
             msg.Input_Torque_FF  = axis.torque_input_enabled_ ? axis.torque_setpoint_ : 0.0f;
-            axis.send(msg);
+            sent = axis.send(msg);
         } else if (axis.torque_input_enabled_) {
             Set_Input_Torque_msg_t msg;
             msg.Input_Torque = axis.torque_setpoint_;
-            axis.send(msg);
+            sent = axis.send(msg);
+        }
+        if(!sent){
+            ROS_ERROR_STREAM_THROTTLE(2,"[odrive_hi] Failed to send can cmd message. Node id=" << axis.node_id_);
         }
         // no control enabled — don't send any setpoint
     }
