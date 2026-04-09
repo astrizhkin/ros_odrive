@@ -8,7 +8,7 @@ This package contains:
 - Hardware descriptor (URDF) files for the [BotWheel Explorer](https://shop.odriverobotics.com/products/botwheel-explorer).
 - A launch file that allows to drive the robot around by sending `geometry_msgs/msg/TwistStamped` messages.
 
-See also: [odrive_ros2_control](../odrive_ros2_control/README.md)
+See also: [odrive_ros_control](../odrive_ros_control/README.md)
 
 ## Architecture
 
@@ -28,7 +28,7 @@ This assumes that your ODrives are already configured (with `node_id` 0 and 1) a
 1. Install Dependencies
 
    ```bash
-   rosdep install --from-paths odrive_ros2_control odrive_botwheel_explorer -y --ignore-src
+   rosdep install --from-paths odrive_ros_control odrive_botwheel_explorer -y --ignore-src
    ```
 
 1. Build

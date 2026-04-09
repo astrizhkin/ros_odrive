@@ -1,0 +1,9 @@
+<library path="odrive_ros_control_plugin">
+  <class name="odrive_ros_control_plugin/ODriveHardwareInterface"
+         type="odrive_ros_control::ODriveHardwareInterface"
+         base_class_type="hardware_interface::RobotHW">
+    <description>
+      ODrive plugin for ros_control.
+    </description>
+  </class>
+</library>

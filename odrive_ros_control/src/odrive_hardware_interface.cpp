@@ -1,0 +1,322 @@
+#include "can_helpers.hpp"
+#include "can_simple_messages.hpp"
+#include "hardware_interface/robot_hw.h"
+#include "hardware_interface/joint_state_interface.h"
+#include "hardware_interface/joint_command_interface.h"
+#include "odrive_enums.h"
+#include "pluginlib/class_list_macros.h"
+#include "ros/ros.h"
+#include "socket_can.hpp"
+#include <cmath>
+
+namespace odrive_ros_control {
+
+class Axis;
+
+class ODriveHardwareInterface : public hardware_interface::RobotHW {
+public:
+    ODriveHardwareInterface();
+    ~ODriveHardwareInterface();
+
+    bool init(ros::NodeHandle& root_nh, ros::NodeHandle& robot_hw_nh) override;
+    void read(const ros::Time& time, const ros::Duration& period) override;
+    void write(const ros::Time& time, const ros::Duration& period) override;
+    void doSwitch(
+        const std::list<hardware_interface::ControllerInfo>& start_list,
+        const std::list<hardware_interface::ControllerInfo>& stop_list
+    ) override;
+
+private:
+    void on_can_msg(const can_frame& frame);
+    void set_axis_command_mode(const Axis& axis);
+
+    bool active_;
+    EpollEventLoop event_loop_;
+    std::vector<Axis> axes_;
+    std::string can_intf_name_;
+    SocketCanIntf can_intf_;
+    ros::Time timestamp_;
+
+    hardware_interface::JointStateInterface    joint_state_interface_;
+    hardware_interface::PositionJointInterface position_joint_interface_;
+    hardware_interface::VelocityJointInterface velocity_joint_interface_;
+    hardware_interface::EffortJointInterface   effort_joint_interface_;
+};
+
+struct Axis {
+    Axis(SocketCanIntf* can_intf, uint32_t node_id, const std::string& joint_name)
+        : can_intf_(can_intf), node_id_(node_id), joint_name_(joint_name) {}
+
+    void on_can_msg(const ros::Time& timestamp, const can_frame& frame);
+
+    SocketCanIntf* can_intf_;
+    uint32_t node_id_;
+    std::string joint_name_;
+
+    // Commands (ros_control => ODrives)
+    double pos_setpoint_    = 0.0; // [rad]
+    double vel_setpoint_    = 0.0; // [rad/s]
+    double torque_setpoint_ = 0.0; // [Nm]
+
+    // State (ODrives => ros_control)
+    double pos_estimate_    = 0.0; // [rad]
+    double vel_estimate_    = 0.0; // [rad/s]
+    double torque_target_   = 0.0; // [Nm]
+    double torque_estimate_ = 0.0; // [Nm]
+
+    // Active control modes
+    bool pos_input_enabled_    = false;
+    bool vel_input_enabled_    = false;
+    bool torque_input_enabled_ = false;
+
+    template <typename T>
+    void send(const T& msg) const {
+        struct can_frame frame;
+        frame.can_id  = node_id_ << 5 | msg.cmd_id;
+        frame.can_dlc = msg.msg_length;
+        msg.encode_buf(frame.data);
+        can_intf_->send_can_frame(frame);
+    }
+};
+
+} // namespace odrive_ros_control
+
+using namespace odrive_ros_control;
+
+ODriveHardwareInterface::ODriveHardwareInterface() : active_(false) {}
+
+ODriveHardwareInterface::~ODriveHardwareInterface() {
+    active_ = false;
+    for (auto& axis : axes_) {
+        set_axis_command_mode(axis);
+    }
+    can_intf_.deinit();
+}
+
+bool ODriveHardwareInterface::init(ros::NodeHandle& /*root_nh*/, ros::NodeHandle& robot_hw_nh) {
+    // Read parameters
+    robot_hw_nh.param<std::string>("can", can_intf_name_, "can0");
+
+    std::vector<std::string> joint_names;
+    if (!robot_hw_nh.getParam("joints", joint_names)) {
+        ROS_ERROR("ODriveHardwareInterface: 'joints' parameter not found");
+        return false;
+    }
+
+    // Initialize axes from joint list
+    for (const auto& joint_name : joint_names) {
+        int node_id = 0;
+        if (!robot_hw_nh.getParam("joint_node_ids/" + joint_name, node_id)) {
+            ROS_ERROR("ODriveHardwareInterface: node_id not found for joint '%s'", joint_name.c_str());
+            return false;
+        }
+        axes_.emplace_back(&can_intf_, static_cast<uint32_t>(node_id), joint_name);
+    }
+
+    // Register hardware interfaces
+    for (auto& axis : axes_) {
+        // State interface (pos, vel, effort)
+        hardware_interface::JointStateHandle state_handle(
+            axis.joint_name_,
+            &axis.pos_estimate_,
+            &axis.vel_estimate_,
+            &axis.torque_target_
+        );
+        joint_state_interface_.registerHandle(state_handle);
+
+        // Command interfaces
+        hardware_interface::JointHandle pos_handle(
+            joint_state_interface_.getHandle(axis.joint_name_),
+            &axis.pos_setpoint_
+        );
+        position_joint_interface_.registerHandle(pos_handle);
+
+        hardware_interface::JointHandle vel_handle(
+            joint_state_interface_.getHandle(axis.joint_name_),
+            &axis.vel_setpoint_
+        );
+        velocity_joint_interface_.registerHandle(vel_handle);
+
+        hardware_interface::JointHandle eff_handle(
+            joint_state_interface_.getHandle(axis.joint_name_),
+            &axis.torque_setpoint_
+        );
+        effort_joint_interface_.registerHandle(eff_handle);
+    }
+
+    registerInterface(&joint_state_interface_);
+    registerInterface(&position_joint_interface_);
+    registerInterface(&velocity_joint_interface_);
+    registerInterface(&effort_joint_interface_);
+
+    // Initialize CAN interface
+    if (!can_intf_.init(can_intf_name_, &event_loop_,
+        std::bind(&ODriveHardwareInterface::on_can_msg, this, std::placeholders::_1))) {
+        ROS_ERROR("ODriveHardwareInterface: Failed to initialize SocketCAN on %s", can_intf_name_.c_str());
+        return false;
+    }
+
+    ROS_INFO("ODriveHardwareInterface: Initialized SocketCAN on %s", can_intf_name_.c_str());
+
+    active_ = true;
+    for (auto& axis : axes_) {
+        set_axis_command_mode(axis);
+    }
+
+    return true;
+}
+
+void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /*period*/) {
+    timestamp_ = time;
+    while (can_intf_.read_nonblocking()) {
+        // drain all pending CAN messages
+    }
+}
+
+void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Duration& /*period*/) {
+    for (auto& axis : axes_) {
+        if (axis.pos_input_enabled_) {
+            Set_Input_Pos_msg_t msg;
+            msg.Input_Pos   = axis.pos_setpoint_ / (2 * M_PI);
+            msg.Vel_FF      = axis.vel_input_enabled_    ? (axis.vel_setpoint_ / (2 * M_PI)) : 0.0f;
+            msg.Torque_FF   = axis.torque_input_enabled_ ? axis.torque_setpoint_              : 0.0f;
+            axis.send(msg);
+        } else if (axis.vel_input_enabled_) {
+            Set_Input_Vel_msg_t msg;
+            msg.Input_Vel        = axis.vel_setpoint_ / (2 * M_PI);
+            msg.Input_Torque_FF  = axis.torque_input_enabled_ ? axis.torque_setpoint_ : 0.0f;
+            axis.send(msg);
+        } else if (axis.torque_input_enabled_) {
+            Set_Input_Torque_msg_t msg;
+            msg.Input_Torque = axis.torque_setpoint_;
+            axis.send(msg);
+        }
+        // no control enabled — don't send any setpoint
+    }
+}
+
+void ODriveHardwareInterface::doSwitch(
+    const std::list<hardware_interface::ControllerInfo>& start_list,
+    const std::list<hardware_interface::ControllerInfo>& stop_list
+) {
+    for (size_t i = 0; i < axes_.size(); ++i) {
+        Axis& axis = axes_[i];
+        bool mode_switch = false;
+
+        // Disable interfaces claimed by stopping controllers
+        for (const auto& ctrl : stop_list) {
+            for (const auto& resource : ctrl.claimed_resources) {
+                for (const auto& joint : resource.resources) {
+                    if (joint != axis.joint_name_) continue;
+                    if (resource.hardware_interface == "hardware_interface::PositionJointInterface")
+                        { axis.pos_input_enabled_    = false; mode_switch = true; }
+                    if (resource.hardware_interface == "hardware_interface::VelocityJointInterface")
+                        { axis.vel_input_enabled_    = false; mode_switch = true; }
+                    if (resource.hardware_interface == "hardware_interface::EffortJointInterface")
+                        { axis.torque_input_enabled_ = false; mode_switch = true; }
+                }
+            }
+        }
+
+        // Enable interfaces claimed by starting controllers
+        for (const auto& ctrl : start_list) {
+            for (const auto& resource : ctrl.claimed_resources) {
+                for (const auto& joint : resource.resources) {
+                    if (joint != axis.joint_name_) continue;
+                    if (resource.hardware_interface == "hardware_interface::PositionJointInterface")
+                        { axis.pos_input_enabled_    = true; mode_switch = true; }
+                    if (resource.hardware_interface == "hardware_interface::VelocityJointInterface")
+                        { axis.vel_input_enabled_    = true; mode_switch = true; }
+                    if (resource.hardware_interface == "hardware_interface::EffortJointInterface")
+                        { axis.torque_input_enabled_ = true; mode_switch = true; }
+                }
+            }
+        }
+
+        if (mode_switch) {
+            set_axis_command_mode(axis);
+        }
+    }
+}
+
+void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
+    for (auto& axis : axes_) {
+        if ((frame.can_id >> 5) == axis.node_id_) {
+            axis.on_can_msg(timestamp_, frame);
+        }
+    }
+}
+
+void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
+    if (!active_) {
+        ROS_INFO("ODriveHardwareInterface: Interface inactive. Setting axis to idle.");
+        Set_Axis_State_msg_t idle_msg;
+        idle_msg.Axis_Requested_State = AXIS_STATE_IDLE;
+        axis.send(idle_msg);
+        return;
+    }
+
+    Set_Controller_Mode_msg_t control_msg;
+    Clear_Errors_msg_t        clear_error_msg;
+    Set_Axis_State_msg_t      state_msg;
+
+    clear_error_msg.Identify   = 0;
+    control_msg.Input_Mode     = INPUT_MODE_PASSTHROUGH;
+    state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
+
+    if (axis.pos_input_enabled_) {
+        ROS_INFO("ODriveHardwareInterface: Setting to position control.");
+        control_msg.Control_Mode = CONTROL_MODE_POSITION_CONTROL;
+    } else if (axis.vel_input_enabled_) {
+        ROS_INFO("ODriveHardwareInterface: Setting to velocity control.");
+        control_msg.Control_Mode = CONTROL_MODE_VELOCITY_CONTROL;
+    } else if (axis.torque_input_enabled_) {
+        ROS_INFO("ODriveHardwareInterface: Setting to torque control.");
+        control_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
+    } else {
+        ROS_INFO("ODriveHardwareInterface: No control mode. Setting to idle.");
+        state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
+        axis.send(state_msg);
+        return;
+    }
+
+    axis.send(control_msg);
+    axis.send(clear_error_msg);
+    axis.send(state_msg);
+}
+
+void Axis::on_can_msg(const ros::Time& /*timestamp*/, const can_frame& frame) {
+    uint8_t cmd = frame.can_id & 0x1f;
+
+    switch (cmd) {
+        case Get_Encoder_Estimates_msg_t::cmd_id: {
+            if (frame.can_dlc < Get_Encoder_Estimates_msg_t::msg_length) {
+                ROS_WARN("ODriveHardwareInterface: message %d too short", cmd);
+                break;
+            }
+            Get_Encoder_Estimates_msg_t msg;
+            msg.decode_buf(frame.data);
+            pos_estimate_ = msg.Pos_Estimate * (2 * M_PI);
+            vel_estimate_ = msg.Vel_Estimate * (2 * M_PI);
+            break;
+        }
+        case Get_Torques_msg_t::cmd_id: {
+            if (frame.can_dlc < Get_Torques_msg_t::msg_length) {
+                ROS_WARN("ODriveHardwareInterface: message %d too short", cmd);
+                break;
+            }
+            Get_Torques_msg_t msg;
+            msg.decode_buf(frame.data);
+            torque_target_   = msg.Torque_Target;
+            torque_estimate_ = msg.Torque_Estimate;
+            break;
+        }
+        default:
+            break; // silently ignore unimplemented command IDs
+    }
+}
+
+PLUGINLIB_EXPORT_CLASS(
+    odrive_ros_control::ODriveHardwareInterface,
+    hardware_interface::RobotHW
+)
