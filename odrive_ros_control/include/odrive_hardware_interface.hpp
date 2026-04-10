@@ -37,6 +37,10 @@ private:
     hardware_interface::PositionJointInterface position_joint_interface_;
     hardware_interface::VelocityJointInterface velocity_joint_interface_;
     hardware_interface::EffortJointInterface   effort_joint_interface_;
+
+    // Status publishing
+    ros::Publisher odrive_status_pub_;
+    ros::Publisher controller_status_pub_;
 };
 
 struct Axis {
@@ -64,6 +68,36 @@ struct Axis {
     bool pos_input_enabled_    = false;
     bool vel_input_enabled_    = false;
     bool torque_input_enabled_ = false;
+
+    // ODriveStatus fields
+    uint32_t active_errors_ = 0;
+    uint32_t disarm_reason_ = 0;
+    float fet_temperature_   = 0.0f;
+    float motor_temperature_ = 0.0f;
+    float bus_voltage_       = 0.0f;
+    float bus_current_       = 0.0f;
+
+    // ControllerStatus fields
+    uint8_t axis_state_           = 0;
+    uint8_t procedure_result_     = 0;
+    bool trajectory_done_flag_    = false;
+    float iq_setpoint_            = 0.0f;
+    float iq_measured_            = 0.0f;
+
+    // Timestamps of last received CAN message per group
+    ros::Time odrv_status_stamp_;
+    ros::Time ctrl_status_stamp_;
+
+    // Publish flags — bitmasks showing which fields have been received
+    // ODriveStatus needs: error(001) + temp(010) + bus(100) = 0b111
+    // ControllerStatus needs: heartbeat(0001) + encoder(0010) + iq(0100) + torques(1000) = 0b1111
+    short int odrv_pub_flag_ = 0;
+    short int ctrl_pub_flag_ = 0;
+
+    // Whether we ever received a complete status (to distinguish 
+    // "never received" from "timed out")
+    bool odrv_status_valid_ = false;
+    bool ctrl_status_valid_ = false;
 
     template <typename T>
     bool send_silent(const T& msg) const {

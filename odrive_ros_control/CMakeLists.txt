@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   hardware_interface
   controller_manager
+  odrive_can
   pluginlib
 )
 
@@ -17,7 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include ../odrive_base/include
   LIBRARIES odrive_ros_control_plugin
-  CATKIN_DEPENDS roscpp hardware_interface controller_manager pluginlib
+  CATKIN_DEPENDS roscpp hardware_interface controller_manager odrive_can pluginlib
 )
 
 include_directories(
@@ -44,8 +45,15 @@ target_compile_features(odrive_ros_control_node PRIVATE cxx_std_17)
 target_link_libraries(odrive_ros_control_node
   ${catkin_LIBRARIES}
 )
-add_dependencies(odrive_ros_control_node
-  odrive_ros_control_plugin
+add_dependencies(odrive_ros_control_plugin
+  ${catkin_EXPORTED_TARGETS}
+  odrive_can_generate_messages_cpp
+)
+add_dependencies(
+  odrive_ros_control_node
+  ${catkin_EXPORTED_TARGETS}
+  # explicit dependency on odrive_can message generation
+  odrive_can_generate_messages_cpp
 )
 
 target_compile_features(odrive_ros_control_plugin PRIVATE cxx_std_17)

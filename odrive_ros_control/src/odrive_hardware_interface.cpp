@@ -1,12 +1,16 @@
 #include "can_helpers.hpp"
 #include "can_simple_messages.hpp"
-
+#include "odrive_enums.h"
+#include "odrive_can/ODriveStatus.h"
+#include "odrive_can/ControllerStatus.h"
 #include "pluginlib/class_list_macros.h"
 #include "odrive_hardware_interface.hpp"
 
 #include <cmath>
 
 using namespace odrive_ros_control;
+
+static constexpr double STATUS_TIMEOUT_SEC = 1.0;
 
 ODriveHardwareInterface::ODriveHardwareInterface() : active_(false) {}
 
@@ -74,6 +78,10 @@ bool ODriveHardwareInterface::init(ros::NodeHandle& /*root_nh*/, ros::NodeHandle
     registerInterface(&velocity_joint_interface_);
     registerInterface(&effort_joint_interface_);
 
+    // Status publishers
+    odrive_status_pub_     = robot_hw_nh.advertise<odrive_can::ODriveStatus>("odrive_status", 10);
+    controller_status_pub_ = robot_hw_nh.advertise<odrive_can::ControllerStatus>("controller_status", 10);
+
     // Initialize CAN interface
     if (!can_intf_.init(can_intf_name_, &event_loop_,
         std::bind(&ODriveHardwareInterface::on_can_msg, this, std::placeholders::_1))) {
@@ -95,6 +103,72 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
     timestamp_ = time;
     while (can_intf_.read_nonblocking()) {
         // drain all pending CAN messages
+    }
+
+    for (auto& axis : axes_) {
+        // --- ODriveStatus ---
+        bool odrv_complete = (axis.odrv_pub_flag_ == 0b111);
+        bool odrv_timeout  = axis.odrv_status_valid_ &&
+                             (time - axis.odrv_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
+
+        if (odrv_complete || odrv_timeout) {
+            odrive_can::ODriveStatus msg;
+            msg.header.stamp      = axis.odrv_status_stamp_;
+            msg.header.frame_id   = axis.joint_name_;
+            msg.active_errors     = axis.active_errors_;
+            msg.disarm_reason     = axis.disarm_reason_;
+            msg.fet_temperature   = axis.fet_temperature_;
+            msg.motor_temperature = axis.motor_temperature_;
+            msg.bus_voltage       = axis.bus_voltage_;
+            msg.bus_current       = axis.bus_current_;
+
+            if (odrv_timeout && !odrv_complete) {
+                ROS_WARN_THROTTLE(5.0,
+                    "ODrive '%s': ODriveStatus timeout (missing fields: 0b%03d), "
+                    "last received %.1fs ago",
+                    axis.joint_name_.c_str(),
+                    axis.odrv_pub_flag_,
+                    (time - axis.odrv_status_stamp_).toSec());
+            }
+
+            odrive_status_pub_.publish(msg);
+            axis.odrv_pub_flag_   = 0;
+            axis.odrv_status_valid_ = true;
+        }
+
+        // --- ControllerStatus ---
+        bool ctrl_complete = (axis.ctrl_pub_flag_ == 0b1111);
+        bool ctrl_timeout  = axis.ctrl_status_valid_ &&
+                             (time - axis.ctrl_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
+
+        if (ctrl_complete || ctrl_timeout) {
+            odrive_can::ControllerStatus msg;
+            msg.header.stamp         = axis.ctrl_status_stamp_;
+            msg.header.frame_id      = axis.joint_name_;
+            msg.active_errors        = axis.active_errors_;
+            msg.axis_state           = axis.axis_state_;
+            msg.procedure_result     = axis.procedure_result_;
+            msg.trajectory_done_flag = axis.trajectory_done_flag_;
+            msg.pos_estimate         = axis.pos_estimate_;
+            msg.vel_estimate         = axis.vel_estimate_;
+            msg.iq_setpoint          = axis.iq_setpoint_;
+            msg.iq_measured          = axis.iq_measured_;
+            msg.torque_target        = axis.torque_target_;
+            msg.torque_estimate      = axis.torque_estimate_;
+
+            if (ctrl_timeout && !ctrl_complete) {
+                ROS_WARN_THROTTLE(5.0,
+                    "ODrive '%s': ControllerStatus timeout (missing fields: 0b%04d), "
+                    "last received %.1fs ago",
+                    axis.joint_name_.c_str(),
+                    axis.ctrl_pub_flag_,
+                    (time - axis.ctrl_status_stamp_).toSec());
+            }
+
+            controller_status_pub_.publish(msg);
+            axis.ctrl_pub_flag_    = 0;
+            axis.ctrl_status_valid_ = true;
+        }
     }
 }
 
@@ -214,35 +288,112 @@ void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
     axis.send_log(state_msg,"state_msg");
 }
 
-void Axis::on_can_msg(const ros::Time& /*timestamp*/, const can_frame& frame) {
+void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
     uint8_t cmd = frame.can_id & 0x1f;
-
+    bool message_too_short = false;
     switch (cmd) {
+        case Heartbeat_msg_t::cmd_id: {
+            if (frame.can_dlc < Heartbeat_msg_t::msg_length) {
+                message_too_short = true;
+                break;
+            }
+            Heartbeat_msg_t msg;
+            msg.decode_buf(frame.data);
+            active_errors_        = msg.Axis_Error;
+            axis_state_           = msg.Axis_State;
+            procedure_result_     = msg.Procedure_Result;
+            trajectory_done_flag_ = msg.Trajectory_Done_Flag;
+            ctrl_pub_flag_ |= 0b0001;
+            ctrl_status_stamp_ = timestamp;  // update timestamp on any ctrl msg
+            break;
+        }
         case Get_Encoder_Estimates_msg_t::cmd_id: {
             if (frame.can_dlc < Get_Encoder_Estimates_msg_t::msg_length) {
-                ROS_WARN("ODriveHardwareInterface: message %d too short", cmd);
+                message_too_short = true;
                 break;
             }
             Get_Encoder_Estimates_msg_t msg;
             msg.decode_buf(frame.data);
             pos_estimate_ = msg.Pos_Estimate * (2 * M_PI);
             vel_estimate_ = msg.Vel_Estimate * (2 * M_PI);
+            ctrl_pub_flag_ |= 0b0010;
+            ctrl_status_stamp_ = timestamp;
+            break;
+        }
+        case Get_Iq_msg_t::cmd_id: {
+            if (frame.can_dlc < Get_Iq_msg_t::msg_length) {
+                message_too_short = true;
+                break;
+            }
+            Get_Iq_msg_t msg;
+            msg.decode_buf(frame.data);
+            iq_setpoint_ = msg.Iq_Setpoint;
+            iq_measured_ = msg.Iq_Measured;
+            ctrl_pub_flag_ |= 0b0100;
+            ctrl_status_stamp_ = timestamp;
             break;
         }
         case Get_Torques_msg_t::cmd_id: {
             if (frame.can_dlc < Get_Torques_msg_t::msg_length) {
-                ROS_WARN("ODriveHardwareInterface: message %d too short", cmd);
+                message_too_short = true;
                 break;
             }
             Get_Torques_msg_t msg;
             msg.decode_buf(frame.data);
             torque_target_   = msg.Torque_Target;
             torque_estimate_ = msg.Torque_Estimate;
+            ctrl_pub_flag_ |= 0b1000;
+            ctrl_status_stamp_ = timestamp;
+            break;
+        }
+        case Get_Error_msg_t::cmd_id: {
+            if (frame.can_dlc < Get_Error_msg_t::msg_length) {
+                message_too_short = true;
+                break;
+            }
+            Get_Error_msg_t msg;
+            msg.decode_buf(frame.data);
+            active_errors_ = msg.Active_Errors;
+            disarm_reason_ = msg.Disarm_Reason;
+            odrv_pub_flag_ |= 0b001;
+            odrv_status_stamp_ = timestamp;  // update timestamp on any odrv msg
+            break;
+        }
+        case Get_Temperature_msg_t::cmd_id: {
+            if (frame.can_dlc < Get_Temperature_msg_t::msg_length) {
+                message_too_short = true;
+                break;
+            }
+            Get_Temperature_msg_t msg;
+            msg.decode_buf(frame.data);
+            fet_temperature_   = msg.FET_Temperature;
+            motor_temperature_ = msg.Motor_Temperature;
+            odrv_pub_flag_ |= 0b010;
+            odrv_status_stamp_ = timestamp;
+            break;
+        }
+        case Get_Bus_Voltage_Current_msg_t::cmd_id: {
+            if (frame.can_dlc < Get_Bus_Voltage_Current_msg_t::msg_length) {
+                message_too_short = true;
+                break;
+            }
+            Get_Bus_Voltage_Current_msg_t msg;
+            msg.decode_buf(frame.data);
+            bus_voltage_ = msg.Bus_Voltage;
+            bus_current_ = msg.Bus_Current;
+            odrv_pub_flag_ |= 0b100;
+            odrv_status_stamp_ = timestamp;
             break;
         }
         default:
-            break; // silently ignore unimplemented command IDs
+            ROS_WARN("ODriveHardwareInterface: Got unknown message axis %d, cmd %d", node_id_, cmd);
+            break;
+
     }
+    if(message_too_short) {
+        ROS_WARN("ODriveHardwareInterface: message %d too short", cmd);
+    }
+
 }
 
 PLUGINLIB_EXPORT_CLASS(
