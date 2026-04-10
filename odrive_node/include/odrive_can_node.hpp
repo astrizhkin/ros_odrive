@@ -29,6 +29,17 @@ public:
     ODriveCanNode(const std::string& node_name);
     bool init(EpollEventLoop* event_loop); 
     void deinit();
+protected:
+    bool send_can_frame_silent(const can_frame& frame) {
+        return can_intf_.send_can_frame(frame);
+    }
+    bool send_can_frame_log(const can_frame& frame, const std::string& message) {
+        bool success = can_intf_.send_can_frame(frame);
+        if(!success){
+            ROS_ERROR_STREAM("[odrive_can_node] Failed to send CAN frame id="<<frame.can_id<<", "<<message);
+        }
+        return success;
+    }
 private:
     void recv_callback(const can_frame& frame);
     void subscriber_callback(const ControlMessage::ConstPtr& msg);

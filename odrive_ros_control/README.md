@@ -1,6 +1,6 @@
-# ODrive ros2_control Plugin
+# ODrive ros_control Plugin
 
-This package serves as a hardware interface to control ODrives from [ros2_control](https://control.ros.org/master/index.html).
+This package serves as a hardware interface to control ODrives from [ros_control](https://control.ros.org/master/index.html).
 
 It assumes that the ODrive is already configured and calibrated (see [docs](https://docs.odriverobotics.com/v/latest/guides/getting-started.html) for details).
 
@@ -16,14 +16,14 @@ For a high level usage example, see the [BotWheel Explorer ROS2 Package](../odri
 - Position Control (with optional velocity and torque feedforward)
 - Velocity Control (with optional torque feedforward)
 - Torque Control
-- Automatic control mode selection (based on which Command Interfaces are claimed by the ros2_control Controller)
+- Automatic control mode selection (based on which Command Interfaces are claimed by the ros_control Controller)
 - Position, velocity and torque Feedback
 - Multiple ODrives
 
 **TODO:**
 
-- Error feedback & error handling: If an ODrive disarms for some reason (e.g. undervoltage), the application that connects to ros2_control will currently not be notified.
-- Other telemetry: Additional data like temperatures, DC voltage, etc. are currently not propagated through ros2_control up to the application.
+- Error feedback & error handling: If an ODrive disarms for some reason (e.g. undervoltage), the application that connects to ros_control will currently not be notified.
+- Other telemetry: Additional data like temperatures, DC voltage, etc. are currently not propagated through ros_control up to the application.
 
 
 ## Parameters
@@ -38,7 +38,7 @@ Per joint:
 
 ## Command Interfaces
 
-(from ros2_control Controller to ODrive)
+(from ros_control Controller to ODrive)
 
 - `position`
 - `velocity`
@@ -46,7 +46,7 @@ Per joint:
 
 ## State Interfaces
 
-(from ODrive to ros2_control Controller)
+(from ODrive to ros_control Controller)
 
 - `position`
 - `velocity`

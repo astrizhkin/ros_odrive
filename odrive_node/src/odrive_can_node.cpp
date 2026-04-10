@@ -42,7 +42,7 @@ void ODriveCanNode::deinit() {
         frame.can_id = node_id_ << 5 | CmdId::kSetAxisState;
         write_le<uint32_t>(ODriveAxisState::AXIS_STATE_IDLE, frame.data);
         frame.can_dlc = 4;
-        can_intf_.send_can_frame(frame);
+        send_can_frame_log(frame,"AXIS_STATE_IDLE");
     }
 
     sub_evt_.deinit();
@@ -225,14 +225,14 @@ void ODriveCanNode::request_state_callback() {
         frame.can_id = node_id_ << 5 | CmdId::kClearErrors;
         write_le<uint8_t>(0, frame.data);
         frame.can_dlc = 1;
-        can_intf_.send_can_frame(frame);
+        send_can_frame_log(frame,"CLEAR_ERRORS");
     }
 
     // Set state
     frame.can_id = node_id_ << 5 | CmdId::kSetAxisState;
     write_le<uint32_t>(axis_state, frame.data);
     frame.can_dlc = 4;
-    can_intf_.send_can_frame(frame);
+    send_can_frame_log(frame,"AXIS_STATE");
 }
 
 void ODriveCanNode::request_clear_errors_callback() {
@@ -240,7 +240,7 @@ void ODriveCanNode::request_clear_errors_callback() {
     frame.can_id = node_id_ << 5 | CmdId::kClearErrors;
     write_le<uint8_t>(0, frame.data);
     frame.can_dlc = 1;
-    can_intf_.send_can_frame(frame);
+    send_can_frame_log(frame,"CLEAR_ERRORS");
 }
 
 void ODriveCanNode::ctrl_msg_callback() {
@@ -255,7 +255,7 @@ void ODriveCanNode::ctrl_msg_callback() {
         control_mode = ctrl_msg_.control_mode;
     }
     frame.can_dlc = 8;
-    can_intf_.send_can_frame(frame);
+    send_can_frame_log(frame,"CONTROLLER_MODE");
 
     frame = can_frame{};
     switch (control_mode) {
@@ -295,7 +295,7 @@ void ODriveCanNode::ctrl_msg_callback() {
             return;
     }
 
-    can_intf_.send_can_frame(frame);
+    send_can_frame_log(frame,"INPUT_CMD");
 }
 
 inline bool ODriveCanNode::verify_length(const std::string& name, uint8_t expected, uint8_t length) {

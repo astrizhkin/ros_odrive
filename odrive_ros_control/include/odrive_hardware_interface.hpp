@@ -66,13 +66,24 @@ struct Axis {
     bool torque_input_enabled_ = false;
 
     template <typename T>
-    bool send(const T& msg) const {
+    bool send_silent(const T& msg) const {
         struct can_frame frame;
         frame.can_id  = node_id_ << 5 | msg.cmd_id;
         frame.can_dlc = msg.msg_length;
         msg.encode_buf(frame.data);
         return can_intf_->send_can_frame(frame);
     }
+
+    template <typename T>
+    bool send_log(const T& msg, const std::string& message) const {
+        bool success = this->send_silent(msg);
+        uint8_t can_id  = node_id_ << 5 | msg.cmd_id;
+        if(!success) {
+            ROS_ERROR("[odrive_hi] Failed to send CAN frame id="<<can_id<<", "<<message);
+        }
+        return success;
+    }
+
 };
 
 } // namespace odrive_ros_control

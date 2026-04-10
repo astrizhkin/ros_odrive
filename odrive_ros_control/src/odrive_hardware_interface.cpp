@@ -106,16 +106,16 @@ void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Durati
             msg.Input_Pos   = axis.pos_setpoint_ / (2 * M_PI);
             msg.Vel_FF      = axis.vel_input_enabled_    ? (axis.vel_setpoint_ / (2 * M_PI)) : 0.0f;
             msg.Torque_FF   = axis.torque_input_enabled_ ? axis.torque_setpoint_              : 0.0f;
-            sent = axis.send(msg);
+            sent = axis.send_silent(msg);
         } else if (axis.vel_input_enabled_) {
             Set_Input_Vel_msg_t msg;
             msg.Input_Vel        = axis.vel_setpoint_ / (2 * M_PI);
             msg.Input_Torque_FF  = axis.torque_input_enabled_ ? axis.torque_setpoint_ : 0.0f;
-            sent = axis.send(msg);
+            sent = axis.send_silent(msg);
         } else if (axis.torque_input_enabled_) {
             Set_Input_Torque_msg_t msg;
             msg.Input_Torque = axis.torque_setpoint_;
-            sent = axis.send(msg);
+            sent = axis.send_silent(msg);
         }
         if(!sent){
             ROS_ERROR_STREAM_THROTTLE(2,"[odrive_hi] Failed to send can cmd message. Node id=" << axis.node_id_);
@@ -181,7 +181,7 @@ void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
         ROS_INFO("ODriveHardwareInterface: Interface inactive. Setting axis to idle.");
         Set_Axis_State_msg_t idle_msg;
         idle_msg.Axis_Requested_State = AXIS_STATE_IDLE;
-        axis.send(idle_msg);
+        axis.send_log(idle_msg,"AXIS_STATE_IDLE");
         return;
     }
 
@@ -205,13 +205,13 @@ void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
     } else {
         ROS_INFO("ODriveHardwareInterface: No control mode. Setting to idle.");
         state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
-        axis.send(state_msg);
+        axis.send_log(state_msg,"AXIS_STATE_IDLE");
         return;
     }
 
-    axis.send(control_msg);
-    axis.send(clear_error_msg);
-    axis.send(state_msg);
+    axis.send_log(control_msg,"control_msg");
+    axis.send_log(clear_error_msg,"clear_error_msg");
+    axis.send_log(state_msg,"state_msg");
 }
 
 void Axis::on_can_msg(const ros::Time& /*timestamp*/, const can_frame& frame) {
