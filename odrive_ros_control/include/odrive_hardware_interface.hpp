@@ -84,6 +84,9 @@ struct Axis {
     float iq_setpoint_            = 0.0f;
     float iq_measured_            = 0.0f;
 
+    // Timestamps of last received heartbeat message
+    ros::Time last_heartbeat_stamp_;
+
     // Timestamps of last received CAN message per group
     ros::Time odrv_status_stamp_;
     ros::Time ctrl_status_stamp_;

@@ -11,6 +11,7 @@
 using namespace odrive_ros_control;
 
 static constexpr double STATUS_TIMEOUT_SEC = 1.0;
+static constexpr double HEARTBEAT_TIMEOUT_SEC  = 2.0;
 
 ODriveHardwareInterface::ODriveHardwareInterface() : active_(false) {}
 
@@ -110,11 +111,18 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
         bool odrv_complete = (axis.odrv_pub_flag_ == 0b111);
         bool odrv_timeout  = axis.odrv_status_valid_ &&
                              (time - axis.odrv_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
+        bool connected = (time - axis.last_heartbeat_stamp_).toSec() < HEARTBEAT_TIMEOUT_SEC;
+        if (!connected) {
+            ROS_WARN_THROTTLE(5.0, "[odrive_hi] '%s': no heartbeat for %.1fs",
+                axis.joint_name_.c_str(),
+                (time - axis.last_heartbeat_stamp_).toSec());
+        }
 
         if (odrv_complete || odrv_timeout) {
             odrive_can::ODriveStatus msg;
             msg.header.stamp      = axis.odrv_status_stamp_;
             msg.header.frame_id   = axis.joint_name_;
+            msg.connected         = connected;
             msg.active_errors     = axis.active_errors_;
             msg.disarm_reason     = axis.disarm_reason_;
             msg.fet_temperature   = axis.fet_temperature_;
@@ -145,6 +153,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
             odrive_can::ControllerStatus msg;
             msg.header.stamp         = axis.ctrl_status_stamp_;
             msg.header.frame_id      = axis.joint_name_;
+            msg.connected         = connected;
             msg.active_errors        = axis.active_errors_;
             msg.axis_state           = axis.axis_state_;
             msg.procedure_result     = axis.procedure_result_;
@@ -305,6 +314,7 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             trajectory_done_flag_ = msg.Trajectory_Done_Flag;
             ctrl_pub_flag_ |= 0b0001;
             ctrl_status_stamp_ = timestamp;  // update timestamp on any ctrl msg
+            last_heartbeat_stamp_ = timestamp;
             break;
         }
         case Get_Encoder_Estimates_msg_t::cmd_id: {

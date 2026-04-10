@@ -1,4 +1,5 @@
 std_msgs/Header header
+bool connected
 float32 bus_voltage
 float32 bus_current
 float32 fet_temperature
