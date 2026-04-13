@@ -85,22 +85,17 @@ struct Axis {
     float iq_measured_            = 0.0f;
 
     // Timestamps of last received heartbeat message
-    ros::Time last_heartbeat_stamp_;
+    ros::Time last_heartbeat_stamp_ = ros::Time::ZERO;
 
     // Timestamps of last received CAN message per group
-    ros::Time odrv_status_stamp_;
-    ros::Time ctrl_status_stamp_;
+    ros::Time odrv_status_stamp_ = ros::Time::ZERO;
+    ros::Time ctrl_status_stamp_ = ros::Time::ZERO;
 
     // Publish flags — bitmasks showing which fields have been received
     // ODriveStatus needs: error(001) + temp(010) + bus(100) = 0b111
     // ControllerStatus needs: heartbeat(0001) + encoder(0010) + iq(0100) + torques(1000) = 0b1111
     short int odrv_pub_flag_ = 0;
     short int ctrl_pub_flag_ = 0;
-
-    // Whether we ever received a complete status (to distinguish 
-    // "never received" from "timed out")
-    bool odrv_status_valid_ = false;
-    bool ctrl_status_valid_ = false;
 
     template <typename T>
     bool send_silent(const T& msg) const {

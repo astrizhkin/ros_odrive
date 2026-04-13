@@ -109,8 +109,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
     for (auto& axis : axes_) {
         // --- ODriveStatus ---
         bool odrv_complete = (axis.odrv_pub_flag_ == 0b111);
-        bool odrv_timeout  = axis.odrv_status_valid_ &&
-                             (time - axis.odrv_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
+        bool odrv_timeout  = axis.odrv_status_stamp_!=ros::Time::ZERO && (time - axis.odrv_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
         bool connected = (time - axis.last_heartbeat_stamp_).toSec() < HEARTBEAT_TIMEOUT_SEC;
         if (!connected) {
             ROS_WARN_THROTTLE(5.0, "[odrive_hi] '%s': no heartbeat for %.1fs",
@@ -141,13 +140,11 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 
             odrive_status_pub_.publish(msg);
             axis.odrv_pub_flag_   = 0;
-            axis.odrv_status_valid_ = true;
         }
 
         // --- ControllerStatus ---
         bool ctrl_complete = (axis.ctrl_pub_flag_ == 0b1111);
-        bool ctrl_timeout  = axis.ctrl_status_valid_ &&
-                             (time - axis.ctrl_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
+        bool ctrl_timeout  = axis.ctrl_status_stamp_!=ros::Time::ZERO && (time - axis.ctrl_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
 
         if (ctrl_complete || ctrl_timeout) {
             odrive_can::ControllerStatus msg;
@@ -176,7 +173,6 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 
             controller_status_pub_.publish(msg);
             axis.ctrl_pub_flag_    = 0;
-            axis.ctrl_status_valid_ = true;
         }
     }
 }
