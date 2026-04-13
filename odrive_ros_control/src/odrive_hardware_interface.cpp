@@ -248,10 +248,16 @@ void ODriveHardwareInterface::doSwitch(
 }
 
 void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
+    bool axis_found = false;
+    uint32_t can_id = (frame.can_id >> 5);
     for (auto& axis : axes_) {
-        if ((frame.can_id >> 5) == axis.node_id_) {
+        if (can_id == axis.node_id_) {
+            axis_found = true;
             axis.on_can_msg(timestamp_, frame);
         }
+    }
+    if(axis_found) {
+        ROS_WARN("ODriveHardwareInterface: Got can message for unknown axis  %d",can_id);
     }
 }
 
