@@ -256,7 +256,7 @@ void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
             axis.on_can_msg(timestamp_, frame);
         }
     }
-    if(axis_found) {
+    if(!axis_found) {
         ROS_WARN("ODriveHardwareInterface: Got can message for unknown axis  %d",can_id);
     }
 }
