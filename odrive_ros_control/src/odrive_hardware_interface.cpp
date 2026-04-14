@@ -118,7 +118,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
                 (time - axis.last_heartbeat_stamp_).toSec());
         }else{
             if(!axis.connected){
-                ROS_INFO("[odrive_hi] '%s': axis conneced",axis.joint_name_.c_str());
+                ROS_INFO("[odrive_hi] '%s': axis connected",axis.joint_name_.c_str());
             }
             axis.connected = true;
         }
@@ -136,9 +136,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
             msg.bus_current       = axis.bus_current_;
 
             if (odrv_timeout && !odrv_complete) {
-                ROS_WARN_THROTTLE(5.0,
-                    "[odrive_hi] '%s': ODriveStatus timeout (missing fields: 0b%03d), "
-                    "last received %.1fs ago",
+                ROS_WARN("[odrive_hi] '%s': ODriveStatus timeout (missing fields: 0b%03d), last received %.1fs ago",
                     axis.joint_name_.c_str(),
                     axis.odrv_pub_flag_,
                     (time - axis.odrv_status_stamp_).toSec());
@@ -169,9 +167,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
             msg.torque_estimate      = axis.torque_estimate_;
 
             if (ctrl_timeout && !ctrl_complete) {
-                ROS_WARN_THROTTLE(5.0,
-                    "[odrive_hi] '%s': ControllerStatus timeout (missing fields: 0b%04d), "
-                    "last received %.1fs ago",
+                ROS_WARN("[odrive_hi] '%s': ControllerStatus timeout (missing fields: 0b%04d), last received %.1fs ago",
                     axis.joint_name_.c_str(),
                     axis.ctrl_pub_flag_,
                     (time - axis.ctrl_status_stamp_).toSec());
