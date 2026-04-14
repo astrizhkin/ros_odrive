@@ -53,6 +53,8 @@ struct Axis {
     uint32_t node_id_;
     std::string joint_name_;
 
+    bool connected = false;
+
     // Commands (ros_control => ODrives)
     double pos_setpoint_    = 0.0; // [rad]
     double vel_setpoint_    = 0.0; // [rad/s]

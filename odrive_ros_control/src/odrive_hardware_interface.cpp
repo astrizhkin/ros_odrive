@@ -110,18 +110,24 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
         // --- ODriveStatus ---
         bool odrv_complete = (axis.odrv_pub_flag_ == 0b111);
         bool odrv_timeout  = axis.odrv_status_stamp_!=ros::Time::ZERO && (time - axis.odrv_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
-        bool connected = (time - axis.last_heartbeat_stamp_).toSec() < HEARTBEAT_TIMEOUT_SEC;
-        if (!connected) {
+        bool connected_now = (time - axis.last_heartbeat_stamp_).toSec() < HEARTBEAT_TIMEOUT_SEC;
+        if (!connected_now) {
+            axis.connected = false;
             ROS_WARN_THROTTLE(5.0, "[odrive_hi] '%s': no heartbeat for %.1fs",
                 axis.joint_name_.c_str(),
                 (time - axis.last_heartbeat_stamp_).toSec());
+        }else{
+            if(!axis.connected){
+                ROS_INFO("[odrive_hi] '%s': axis conneced",axis.joint_name_.c_str());
+            }
+            axis.connected = true;
         }
 
         if (odrv_complete || odrv_timeout) {
             odrive_can::ODriveStatus msg;
             msg.header.stamp      = axis.odrv_status_stamp_;
             msg.header.frame_id   = axis.joint_name_;
-            msg.connected         = connected;
+            msg.connected         = axis.connected;
             msg.active_errors     = axis.active_errors_;
             msg.disarm_reason     = axis.disarm_reason_;
             msg.fet_temperature   = axis.fet_temperature_;
@@ -150,7 +156,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
             odrive_can::ControllerStatus msg;
             msg.header.stamp         = axis.ctrl_status_stamp_;
             msg.header.frame_id      = axis.joint_name_;
-            msg.connected         = connected;
+            msg.connected            = axis.connected;
             msg.active_errors        = axis.active_errors_;
             msg.axis_state           = axis.axis_state_;
             msg.procedure_result     = axis.procedure_result_;
@@ -250,10 +256,12 @@ void ODriveHardwareInterface::doSwitch(
 void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
     bool axis_found = false;
     uint32_t can_id = (frame.can_id >> 5);
+    uint8_t can_cmd = frame.can_id & 0x1f;
     for (auto& axis : axes_) {
         if (can_id == axis.node_id_) {
             axis_found = true;
             axis.on_can_msg(timestamp_, frame);
+            ROS_INFO("[odrive_hi] Got can cmd %d for axis %d",can_cmd, can_id);
         }
     }
     if(!axis_found) {
