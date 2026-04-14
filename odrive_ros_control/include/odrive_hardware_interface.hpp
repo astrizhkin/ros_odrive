@@ -72,7 +72,8 @@ struct Axis {
     bool torque_input_enabled_ = false;
 
     // ODriveStatus fields
-    uint32_t active_errors_ = 0;
+    uint32_t axis_errors_ = 0;
+    uint32_t motor_errors_ = 0;
     uint32_t disarm_reason_ = 0;
     float fet_temperature_   = 0.0f;
     float motor_temperature_ = 0.0f;

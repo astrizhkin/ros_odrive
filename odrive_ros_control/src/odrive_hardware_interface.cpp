@@ -137,11 +137,14 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 
         if (odrv_complete || odrv_timeout) {
             odrive_can::ODriveStatus msg;
-            msg.header.stamp      = time;
+            msg.header.stamp      = (axis.ctrl_pub_flag_ & 0b001) ? 
+                                                //has heartbeat
+                                                axis.last_heartbeat_stamp_ : 
+                                                time;
             msg.header.frame_id   = axis.joint_name_;
             msg.connected         = axis.connected;
-            msg.active_errors     = axis.active_errors_;
-            msg.disarm_reason     = axis.disarm_reason_;
+            msg.active_errors     = axis.axis_errors_;
+            msg.disarm_reason     = axis.disarm_reason_;//do we need it?
             msg.fet_temperature   = axis.fet_temperature_;
             msg.motor_temperature = axis.motor_temperature_;
             msg.bus_voltage       = axis.bus_voltage_;
@@ -174,7 +177,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
                                                 time;
             msg.header.frame_id      = axis.joint_name_;
             msg.connected            = axis.connected;
-            msg.active_errors        = axis.active_errors_;
+            msg.active_errors        = axis.axis_errors_;
             msg.axis_state           = axis.axis_state_;
             msg.procedure_result     = axis.procedure_result_;
             msg.trajectory_done_flag = axis.trajectory_done_flag_;
@@ -323,6 +326,18 @@ void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
     axis.send_log(state_msg,"state_msg");
 }
 
+//messages we can enable
+//+axis.config.can.iq_rate_ms
+//+axis.config.can.bus_vi_rate_ms
+//+axis.config.can.encoder_rate_ms = 10
+//+axis.config.can.heartbeat_rate_ms = 100
+//axis.config.can.sensorless_rate_ms
+//axis.config.can.encoder_count_rate_ms
+//axis.config.can.controller_error_rate_ms
+//axis.config.can.encoder_error_rate_ms
+//+axis.config.can.motor_error_rate_ms
+//axis.config.can.sensorless_error_rate_ms
+
 void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
     uint8_t cmd = frame.can_id & 0x1f;
     bool message_too_short = false;
@@ -334,11 +349,12 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             }
             Heartbeat_msg_t msg;
             msg.decode_buf(frame.data);
-            active_errors_        = msg.Axis_Error;
+            axis_errors_        = msg.Axis_Error;
             axis_state_           = msg.Axis_State;
             procedure_result_     = msg.Procedure_Result;
             trajectory_done_flag_ = msg.Trajectory_Done_Flag;
             ctrl_pub_flag_ |= 0b0001;
+            odrv_pub_flag_ |= 0b001;
             last_heartbeat_stamp_ = timestamp;
             break;
         }
@@ -365,7 +381,6 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             iq_setpoint_ = msg.Iq_Setpoint;
             iq_measured_ = msg.Iq_Measured;
             ctrl_pub_flag_ |= 0b0100;
-            //last_iq_stamp_ = timestamp;
             break;
         }
         case Get_Torques_msg_t::cmd_id: {
@@ -378,22 +393,21 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             torque_target_   = msg.Torque_Target;
             torque_estimate_ = msg.Torque_Estimate;
             ctrl_pub_flag_ |= 0b1000;
-            //last_torques_stamp_ = timestamp;
             break;
         }
-        case Get_Error_msg_t::cmd_id: {
-            if (frame.can_dlc < Get_Error_msg_t::msg_length) {
+        case Get_Motor_Error_msg_t::cmd_id: {
+            if (frame.can_dlc < Get_Motor_Error_msg_t::msg_length) {
                 message_too_short = true;
                 break;
             }
-            Get_Error_msg_t msg;
+            Get_Motor_Error_msg_t msg;
             msg.decode_buf(frame.data);
-            active_errors_ = msg.Active_Errors;
+            motor_errors_ = msg.Active_Errors;
             disarm_reason_ = msg.Disarm_Reason;
-            odrv_pub_flag_ |= 0b001;
-            //last_error_stamp_ = timestamp;
+            //odrv_pub_flag_ |= 0b001;
             break;
         }
+        //no such message in ODrive5
         case Get_Temperature_msg_t::cmd_id: {
             if (frame.can_dlc < Get_Temperature_msg_t::msg_length) {
                 message_too_short = true;
@@ -404,7 +418,6 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             fet_temperature_   = msg.FET_Temperature;
             motor_temperature_ = msg.Motor_Temperature;
             odrv_pub_flag_ |= 0b010;
-            //last_temperature_stamp_ = timestamp;
             break;
         }
         case Get_Bus_Voltage_Current_msg_t::cmd_id: {
@@ -417,7 +430,6 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             bus_voltage_ = msg.Bus_Voltage;
             bus_current_ = msg.Bus_Current;
             odrv_pub_flag_ |= 0b100;
-            //last_bus_voltage_current_stamp_ = timestamp;
             break;
         }
         default:
