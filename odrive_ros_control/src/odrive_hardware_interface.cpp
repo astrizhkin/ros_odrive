@@ -29,7 +29,7 @@ bool ODriveHardwareInterface::init(ros::NodeHandle& /*root_nh*/, ros::NodeHandle
 
     std::vector<std::string> joint_names;
     if (!robot_hw_nh.getParam("joints", joint_names)) {
-        ROS_ERROR("ODriveHardwareInterface: 'joints' parameter not found");
+        ROS_ERROR("[odrive_hi] 'joints' parameter not found");
         return false;
     }
 
@@ -37,7 +37,7 @@ bool ODriveHardwareInterface::init(ros::NodeHandle& /*root_nh*/, ros::NodeHandle
     for (const auto& joint_name : joint_names) {
         int node_id = 0;
         if (!robot_hw_nh.getParam("joint_node_ids/" + joint_name, node_id)) {
-            ROS_ERROR("ODriveHardwareInterface: node_id not found for joint '%s'", joint_name.c_str());
+            ROS_ERROR("[odrive_hi] node_id not found for joint '%s'", joint_name.c_str());
             return false;
         }
         axes_.emplace_back(&can_intf_, static_cast<uint32_t>(node_id), joint_name);
@@ -86,11 +86,11 @@ bool ODriveHardwareInterface::init(ros::NodeHandle& /*root_nh*/, ros::NodeHandle
     // Initialize CAN interface
     if (!can_intf_.init(can_intf_name_, &event_loop_,
         std::bind(&ODriveHardwareInterface::on_can_msg, this, std::placeholders::_1))) {
-        ROS_ERROR("ODriveHardwareInterface: Failed to initialize SocketCAN on %s", can_intf_name_.c_str());
+        ROS_ERROR("[odrive_hi] Failed to initialize SocketCAN on %s", can_intf_name_.c_str());
         return false;
     }
 
-    ROS_INFO("ODriveHardwareInterface: Initialized SocketCAN on %s", can_intf_name_.c_str());
+    ROS_INFO("[odrive_hi] Initialized SocketCAN on %s", can_intf_name_.c_str());
 
     active_ = true;
     for (auto& axis : axes_) {
@@ -131,7 +131,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 
             if (odrv_timeout && !odrv_complete) {
                 ROS_WARN_THROTTLE(5.0,
-                    "ODrive '%s': ODriveStatus timeout (missing fields: 0b%03d), "
+                    "[odrive_hi] '%s': ODriveStatus timeout (missing fields: 0b%03d), "
                     "last received %.1fs ago",
                     axis.joint_name_.c_str(),
                     axis.odrv_pub_flag_,
@@ -164,7 +164,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 
             if (ctrl_timeout && !ctrl_complete) {
                 ROS_WARN_THROTTLE(5.0,
-                    "ODrive '%s': ControllerStatus timeout (missing fields: 0b%04d), "
+                    "[odrive_hi] '%s': ControllerStatus timeout (missing fields: 0b%04d), "
                     "last received %.1fs ago",
                     axis.joint_name_.c_str(),
                     axis.ctrl_pub_flag_,
@@ -257,13 +257,13 @@ void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
         }
     }
     if(!axis_found) {
-        ROS_WARN("ODriveHardwareInterface: Got can message for unknown axis  %d",can_id);
+        ROS_WARN("[odrive_hi] Got can message for unknown axis  %d",can_id);
     }
 }
 
 void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
     if (!active_) {
-        ROS_INFO("ODriveHardwareInterface: Interface inactive. Setting axis to idle.");
+        ROS_INFO("[odrive_hi] Interface inactive. Setting axis to idle.");
         Set_Axis_State_msg_t idle_msg;
         idle_msg.Axis_Requested_State = AXIS_STATE_IDLE;
         axis.send_log(idle_msg,"AXIS_STATE_IDLE");
@@ -279,16 +279,16 @@ void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
     state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
 
     if (axis.pos_input_enabled_) {
-        ROS_INFO("ODriveHardwareInterface: Setting to position control.");
+        ROS_INFO("[odrive_hi] Setting to position control.");
         control_msg.Control_Mode = CONTROL_MODE_POSITION_CONTROL;
     } else if (axis.vel_input_enabled_) {
-        ROS_INFO("ODriveHardwareInterface: Setting to velocity control.");
+        ROS_INFO("[odrive_hi] Setting to velocity control.");
         control_msg.Control_Mode = CONTROL_MODE_VELOCITY_CONTROL;
     } else if (axis.torque_input_enabled_) {
-        ROS_INFO("ODriveHardwareInterface: Setting to torque control.");
+        ROS_INFO("[odrive_hi] Setting to torque control.");
         control_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
     } else {
-        ROS_INFO("ODriveHardwareInterface: No control mode. Setting to idle.");
+        ROS_INFO("[odrive_hi] No control mode. Setting to idle.");
         state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
         axis.send_log(state_msg,"AXIS_STATE_IDLE");
         return;
@@ -398,12 +398,12 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             break;
         }
         default:
-            ROS_WARN("ODriveHardwareInterface: Got unknown message axis %d, cmd %d", node_id_, cmd);
+            ROS_WARN("[odrive_hi] Got unknown message axis %d, cmd %d", node_id_, cmd);
             break;
 
     }
     if(message_too_short) {
-        ROS_WARN("ODriveHardwareInterface: message %d too short", cmd);
+        ROS_WARN("[odrive_hi] message %d too short", cmd);
     }
 
 }
