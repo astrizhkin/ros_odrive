@@ -107,9 +107,17 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
     }
 
     for (auto& axis : axes_) {
+        //init time for first timout
+        if(axis.odrv_sent_status_stamp_==ros::Time::ZERO) {
+            axis.odrv_sent_status_stamp_ = time;
+        }
+        if(axis.ctrl_sent_status_stamp_==ros::Time::ZERO) {
+            axis.ctrl_sent_status_stamp_ = time;
+        }
+
         // --- ODriveStatus ---
         bool odrv_complete = (axis.odrv_pub_flag_ == 0b111);
-        bool odrv_timeout  = axis.odrv_status_stamp_!=ros::Time::ZERO && (time - axis.odrv_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
+
         bool connected_now = (time - axis.last_heartbeat_stamp_).toSec() < HEARTBEAT_TIMEOUT_SEC;
         if (!connected_now) {
             axis.connected = false;
@@ -119,13 +127,17 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
         }else{
             if(!axis.connected){
                 ROS_INFO("[odrive_hi] '%s': axis connected",axis.joint_name_.c_str());
+                //init stamps with current time so we can collect mesages after connection
+                axis.ctrl_sent_status_stamp_ = time;
+                axis.odrv_sent_status_stamp_ = time;
             }
             axis.connected = true;
         }
+        bool odrv_timeout  = (time - axis.odrv_sent_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
 
         if (odrv_complete || odrv_timeout) {
             odrive_can::ODriveStatus msg;
-            msg.header.stamp      = axis.odrv_status_stamp_;
+            msg.header.stamp      = time;
             msg.header.frame_id   = axis.joint_name_;
             msg.connected         = axis.connected;
             msg.active_errors     = axis.active_errors_;
@@ -139,20 +151,27 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
                 ROS_WARN("[odrive_hi] '%s': ODriveStatus timeout (missing fields: 0b%03d), last received %.1fs ago",
                     axis.joint_name_.c_str(),
                     axis.odrv_pub_flag_,
-                    (time - axis.odrv_status_stamp_).toSec());
+                    (time - axis.odrv_sent_status_stamp_).toSec());
             }
 
             odrive_status_pub_.publish(msg);
             axis.odrv_pub_flag_   = 0;
+            axis.odrv_sent_status_stamp_ = time;
         }
 
         // --- ControllerStatus ---
         bool ctrl_complete = (axis.ctrl_pub_flag_ == 0b1111);
-        bool ctrl_timeout  = axis.ctrl_status_stamp_!=ros::Time::ZERO && (time - axis.ctrl_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
+        bool ctrl_timeout  = (time - axis.ctrl_sent_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
 
         if (ctrl_complete || ctrl_timeout) {
             odrive_can::ControllerStatus msg;
-            msg.header.stamp         = axis.ctrl_status_stamp_;
+            msg.header.stamp         =  (axis.ctrl_pub_flag_ & 0b0010) ? 
+                                            //has encoder estimates
+                                            axis.last_encoder_estimates_stamp_ : 
+                                            (axis.ctrl_pub_flag_ & 0b0001) ? 
+                                                //has heartbeat
+                                                axis.last_heartbeat_stamp_ : 
+                                                time;
             msg.header.frame_id      = axis.joint_name_;
             msg.connected            = axis.connected;
             msg.active_errors        = axis.active_errors_;
@@ -170,11 +189,12 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
                 ROS_WARN("[odrive_hi] '%s': ControllerStatus timeout (missing fields: 0b%04d), last received %.1fs ago",
                     axis.joint_name_.c_str(),
                     axis.ctrl_pub_flag_,
-                    (time - axis.ctrl_status_stamp_).toSec());
+                    (time - axis.ctrl_sent_status_stamp_).toSec());
             }
 
             controller_status_pub_.publish(msg);
             axis.ctrl_pub_flag_    = 0;
+            axis.ctrl_sent_status_stamp_ = time;
         }
     }
 }
@@ -257,7 +277,7 @@ void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
         if (can_id == axis.node_id_) {
             axis_found = true;
             axis.on_can_msg(timestamp_, frame);
-            ROS_INFO("[odrive_hi] Got can cmd %d for axis %d",can_cmd, can_id);
+            //ROS_INFO("[odrive_hi] Got can cmd %d for axis %d",can_cmd, can_id);
         }
     }
     if(!axis_found) {
@@ -319,7 +339,6 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             procedure_result_     = msg.Procedure_Result;
             trajectory_done_flag_ = msg.Trajectory_Done_Flag;
             ctrl_pub_flag_ |= 0b0001;
-            ctrl_status_stamp_ = timestamp;  // update timestamp on any ctrl msg
             last_heartbeat_stamp_ = timestamp;
             break;
         }
@@ -333,7 +352,7 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             pos_estimate_ = msg.Pos_Estimate * (2 * M_PI);
             vel_estimate_ = msg.Vel_Estimate * (2 * M_PI);
             ctrl_pub_flag_ |= 0b0010;
-            ctrl_status_stamp_ = timestamp;
+            last_encoder_estimates_stamp_ = timestamp;
             break;
         }
         case Get_Iq_msg_t::cmd_id: {
@@ -346,7 +365,7 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             iq_setpoint_ = msg.Iq_Setpoint;
             iq_measured_ = msg.Iq_Measured;
             ctrl_pub_flag_ |= 0b0100;
-            ctrl_status_stamp_ = timestamp;
+            //last_iq_stamp_ = timestamp;
             break;
         }
         case Get_Torques_msg_t::cmd_id: {
@@ -359,7 +378,7 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             torque_target_   = msg.Torque_Target;
             torque_estimate_ = msg.Torque_Estimate;
             ctrl_pub_flag_ |= 0b1000;
-            ctrl_status_stamp_ = timestamp;
+            //last_torques_stamp_ = timestamp;
             break;
         }
         case Get_Error_msg_t::cmd_id: {
@@ -372,7 +391,7 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             active_errors_ = msg.Active_Errors;
             disarm_reason_ = msg.Disarm_Reason;
             odrv_pub_flag_ |= 0b001;
-            odrv_status_stamp_ = timestamp;  // update timestamp on any odrv msg
+            //last_error_stamp_ = timestamp;
             break;
         }
         case Get_Temperature_msg_t::cmd_id: {
@@ -385,7 +404,7 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             fet_temperature_   = msg.FET_Temperature;
             motor_temperature_ = msg.Motor_Temperature;
             odrv_pub_flag_ |= 0b010;
-            odrv_status_stamp_ = timestamp;
+            //last_temperature_stamp_ = timestamp;
             break;
         }
         case Get_Bus_Voltage_Current_msg_t::cmd_id: {
@@ -398,7 +417,7 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             bus_voltage_ = msg.Bus_Voltage;
             bus_current_ = msg.Bus_Current;
             odrv_pub_flag_ |= 0b100;
-            odrv_status_stamp_ = timestamp;
+            //last_bus_voltage_current_stamp_ = timestamp;
             break;
         }
         default:

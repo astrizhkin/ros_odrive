@@ -86,12 +86,18 @@ struct Axis {
     float iq_setpoint_            = 0.0f;
     float iq_measured_            = 0.0f;
 
-    // Timestamps of last received heartbeat message
+    // Timestamps of last received CAN messages
     ros::Time last_heartbeat_stamp_ = ros::Time::ZERO;
+    ros::Time last_encoder_estimates_stamp_ = ros::Time::ZERO;
+    //ros::Time last_iq_stamp_ = ros::Time::ZERO;
+    //ros::Time last_torques_stamp_ = ros::Time::ZERO;
+    //ros::Time last_error_stamp_ = ros::Time::ZERO;
+    //ros::Time last_temperature_stamp_ = ros::Time::ZERO;
+    //ros::Time last_bus_voltage_current_stamp_ = ros::Time::ZERO;
 
-    // Timestamps of last received CAN message per group
-    ros::Time odrv_status_stamp_ = ros::Time::ZERO;
-    ros::Time ctrl_status_stamp_ = ros::Time::ZERO;
+    // Timestamps of last send status messages
+    ros::Time odrv_sent_status_stamp_ = ros::Time::ZERO;
+    ros::Time ctrl_sent_status_stamp_ = ros::Time::ZERO;
 
     // Publish flags — bitmasks showing which fields have been received
     // ODriveStatus needs: error(001) + temp(010) + bus(100) = 0b111
