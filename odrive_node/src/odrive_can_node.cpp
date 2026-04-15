@@ -193,7 +193,7 @@ bool ODriveCanNode::service_callback(AxisState::Request& request, AxisState::Res
     std::unique_lock<std::mutex> guard(ctrl_stat_mutex_); // define lock for controller status
     auto call_time = std::chrono::steady_clock::now();
     fresh_heartbeat_.wait(guard, [this, &call_time, &request]() {
-        bool is_busy              = this->ctrl_stat_.procedure_result == ODriveProcedureResult::PROCEDURE_RESULT_BUSY;
+        bool is_busy              = this->ctrl_stat_.procedure_result == ODrive6ProcedureResult::PROCEDURE_RESULT_BUSY;
         bool requested_closed_loop = request.axis_requested_state == ODriveAxisState::AXIS_STATE_CLOSED_LOOP_CONTROL;
         bool minimum_time_passed  = (std::chrono::steady_clock::now() - call_time >= std::chrono::seconds(1));
         return (requested_closed_loop || !is_busy) && minimum_time_passed;
