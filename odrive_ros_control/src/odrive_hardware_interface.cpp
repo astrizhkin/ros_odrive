@@ -163,7 +163,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
         }
 
         // --- ControllerStatus ---
-        bool ctrl_complete = (axis.ctrl_pub_flag_ == 0b1111);
+        bool ctrl_complete = (axis.ctrl_pub_flag_ == 0b0111);
         bool ctrl_timeout  = (time - axis.ctrl_sent_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
 
         if (ctrl_complete || ctrl_timeout) {
@@ -185,8 +185,9 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
             msg.vel_estimate         = axis.vel_estimate_;
             msg.iq_setpoint          = axis.iq_setpoint_;
             msg.iq_measured          = axis.iq_measured_;
-            msg.torque_target        = axis.torque_target_;
-            msg.torque_estimate      = axis.torque_estimate_;
+            //we don't receive periodically torque messages
+            //msg.torque_target        = axis.torque_target_;
+            //msg.torque_estimate      = axis.torque_estimate_;
 
             if (ctrl_timeout && !ctrl_complete) {
                 ROS_WARN("[odrive_hi] '%s': ControllerStatus timeout (missing fields: 0b%04d), last received %.1fs ago",
