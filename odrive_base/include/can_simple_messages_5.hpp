@@ -18,7 +18,7 @@
 //        MSG_SET_AXIS_REQUESTED_STATE,
 //        MSG_SET_AXIS_STARTUP_CONFIG,
 //        MSG_GET_ENCODER_ESTIMATES = 0x009,
-//        MSG_GET_ENCODER_COUNT,
+//        MSG_GET_ENCODER_COUNT = 0x00A,
 //        MSG_SET_CONTROLLER_MODES,
 //        MSG_SET_INPUT_POS,
 //        MSG_SET_INPUT_VEL,
@@ -295,6 +295,41 @@ struct Get_Encoder_Estimates_msg_t final {
     float Pos_Estimate = 0.0f; // [rev]
     float Vel_Estimate = 0.0f; // [rev/s]
 };
+
+struct Get_Encoder_Count_msg_t final {
+    constexpr Get_Encoder_Count_msg_t() = default;
+
+#ifdef ODRIVE_CAN_MSG_TYPE
+    Get_Encoder_Count_msg_t(const TBoard::TCanIntf::TMsg& msg) {
+        decode_msg(msg);
+    }
+
+    void encode_msg(TBoard::TCanIntf::TMsg& msg) {
+        encode_buf(can_msg_get_payload(msg).data());
+    }
+
+    void decode_msg(const TBoard::TCanIntf::TMsg& msg) {
+        decode_buf(can_msg_get_payload(msg).data());
+    }
+#endif
+
+    void encode_buf(uint8_t* buf) const {
+        can_set_signal_raw<int32_t>(buf, Shadow_Count, 0, 32, true);
+        can_set_signal_raw<int32_t>(buf, Count_in_CPR, 32, 32, true);
+    }
+
+    void decode_buf(const uint8_t* buf) {
+        Shadow_Count = can_get_signal_raw<int32_t>(buf, 0, 32, true);
+        Count_in_CPR = can_get_signal_raw<int32_t>(buf, 32, 32, true);
+    }
+
+    static const uint8_t cmd_id = 0x00A;
+    static const uint8_t msg_length = 8;
+    
+    int32_t Shadow_Count = 0;
+    int32_t Count_in_CPR = 0;
+};
+
 
 struct Set_Controller_Mode_msg_t final {
     constexpr Set_Controller_Mode_msg_t() = default;

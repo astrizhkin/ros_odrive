@@ -371,6 +371,18 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             last_encoder_estimates_stamp_ = timestamp;
             break;
         }
+        case Get_Encoder_Count_msg_t::cmd_id: {
+            if (frame.can_dlc < Get_Encoder_Count_msg_t::msg_length) {
+                message_too_short = true;
+                break;
+            }
+            Get_Encoder_Count_msg_t msg;
+            msg.decode_buf(frame.data);
+            // = msg.Shadow_Count;
+            // = msg.Count_in_CPR;
+            //odrv_pub_flag_ |= 0b001;
+            break;
+        }
         case Get_Iq_msg_t::cmd_id: {
             if (frame.can_dlc < Get_Iq_msg_t::msg_length) {
                 message_too_short = true;
@@ -407,7 +419,6 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             //odrv_pub_flag_ |= 0b001;
             break;
         }
-        //no such message in ODrive5
         case Get_Temperature_msg_t::cmd_id: {
             if (frame.can_dlc < Get_Temperature_msg_t::msg_length) {
                 message_too_short = true;
@@ -433,12 +444,12 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             break;
         }
         default:
-            ROS_WARN("[odrive_hi] Got unknown message axis %d, cmd %d", node_id_, cmd);
+            ROS_WARN("[odrive_hi] Got unknown message axis %d, cmd 0x%x", node_id_, cmd);
             break;
 
     }
     if(message_too_short) {
-        ROS_WARN("[odrive_hi] message %d too short", cmd);
+        ROS_WARN("[odrive_hi] message 0x%x too short", cmd);
     }
 
 }
