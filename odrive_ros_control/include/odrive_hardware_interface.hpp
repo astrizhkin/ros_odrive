@@ -120,7 +120,7 @@ struct Axis {
         bool success = this->send_silent(msg);
         uint8_t can_id  = node_id_ << 5 | msg.cmd_id;
         if(!success) {
-            ROS_ERROR_STREAM("[odrive_hi] Failed to send CAN frame id="<<can_id<<", "<<message);
+            ROS_ERROR("[odrive_hi] Failed to send CAN frame id=0x%x, %s",can_id,message.c_str());
         }
         return success;
     }

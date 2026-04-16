@@ -5,7 +5,7 @@
 #include <sys/eventfd.h>
 #include <chrono>
 
-enum CmdId : uint32_t {
+enum CmdId6 : uint32_t {
     kHeartbeat              = 0x001,  // ControllerStatus  - publisher
     kGetError               = 0x003,  // SystemStatus      - publisher
     kSetAxisState           = 0x007,  // SetAxisState      - service
@@ -39,7 +39,7 @@ ODriveCanNode::ODriveCanNode(const std::string& node_name) : nh_(node_name) {
 void ODriveCanNode::deinit() {
     if (axis_idle_on_shutdown_) {
         struct can_frame frame = {};
-        frame.can_id = node_id_ << 5 | CmdId::kSetAxisState;
+        frame.can_id = node_id_ << 5 | CmdId6::kSetAxisState;
         write_le<uint32_t>(ODriveAxisState::AXIS_STATE_IDLE, frame.data);
         frame.can_dlc = 4;
         send_can_frame_log(frame,"AXIS_STATE_IDLE");
@@ -89,7 +89,7 @@ void ODriveCanNode::recv_callback(const can_frame& frame) {
     if (((frame.can_id >> 5) & 0x3F) != node_id_) return;
 
     switch (frame.can_id & 0x1F) {
-        case CmdId::kHeartbeat: {
+        case CmdId6::kHeartbeat: {
             if (!verify_length("kHeartbeat", 8, frame.can_dlc)) break;
             std::lock_guard<std::mutex> guard(ctrl_stat_mutex_);
             ctrl_stat_.active_errors         = read_le<uint32_t>(frame.data + 0);
@@ -100,7 +100,7 @@ void ODriveCanNode::recv_callback(const can_frame& frame) {
             fresh_heartbeat_.notify_one();
             break;
         }
-        case CmdId::kGetError: {
+        case CmdId6::kGetError: {
             if (!verify_length("kGetError", 8, frame.can_dlc)) break;
             std::lock_guard<std::mutex> guard(odrv_stat_mutex_);
             odrv_stat_.active_errors = read_le<uint32_t>(frame.data + 0);
@@ -108,7 +108,7 @@ void ODriveCanNode::recv_callback(const can_frame& frame) {
             odrv_pub_flag_ |= 0b001;
             break;
         }
-        case CmdId::kGetEncoderEstimates: {
+        case CmdId6::kGetEncoderEstimates: {
             if (!verify_length("kGetEncoderEstimates", 8, frame.can_dlc)) break;
             std::lock_guard<std::mutex> guard(ctrl_stat_mutex_);
             ctrl_stat_.pos_estimate = read_le<float>(frame.data + 0);
@@ -116,7 +116,7 @@ void ODriveCanNode::recv_callback(const can_frame& frame) {
             ctrl_pub_flag_ |= 0b0010;
             break;
         }
-        case CmdId::kGetIq: {
+        case CmdId6::kGetIq: {
             if (!verify_length("kGetIq", 8, frame.can_dlc)) break;
             std::lock_guard<std::mutex> guard(ctrl_stat_mutex_);
             ctrl_stat_.iq_setpoint = read_le<float>(frame.data + 0);
@@ -124,7 +124,7 @@ void ODriveCanNode::recv_callback(const can_frame& frame) {
             ctrl_pub_flag_ |= 0b0100;
             break;
         }
-        case CmdId::kGetTemp: {
+        case CmdId6::kGetTemp: {
             if (!verify_length("kGetTemp", 8, frame.can_dlc)) break;
             std::lock_guard<std::mutex> guard(odrv_stat_mutex_);
             odrv_stat_.fet_temperature   = read_le<float>(frame.data + 0);
@@ -132,7 +132,7 @@ void ODriveCanNode::recv_callback(const can_frame& frame) {
             odrv_pub_flag_ |= 0b010;
             break;
         }
-        case CmdId::kGetBusVoltageCurrent: {
+        case CmdId6::kGetBusVoltageCurrent: {
             if (!verify_length("kGetBusVoltageCurrent", 8, frame.can_dlc)) break;
             std::lock_guard<std::mutex> guard(odrv_stat_mutex_);
             odrv_stat_.bus_voltage = read_le<float>(frame.data + 0);
@@ -140,7 +140,7 @@ void ODriveCanNode::recv_callback(const can_frame& frame) {
             odrv_pub_flag_ |= 0b100;
             break;
         }
-        case CmdId::kGetTorques: {
+        case CmdId6::kGetTorques: {
             if (!verify_length("kGetTorques", 8, frame.can_dlc)) break;
             std::lock_guard<std::mutex> guard(ctrl_stat_mutex_);
             ctrl_stat_.torque_target   = read_le<float>(frame.data + 0);
@@ -148,12 +148,12 @@ void ODriveCanNode::recv_callback(const can_frame& frame) {
             ctrl_pub_flag_ |= 0b1000;
             break;
         }
-        case CmdId::kSetAxisState:
-        case CmdId::kSetControllerMode:
-        case CmdId::kSetInputPos:
-        case CmdId::kSetInputVel:
-        case CmdId::kSetInputTorque:
-        case CmdId::kClearErrors: {
+        case CmdId6::kSetAxisState:
+        case CmdId6::kSetControllerMode:
+        case CmdId6::kSetInputPos:
+        case CmdId6::kSetInputVel:
+        case CmdId6::kSetInputTorque:
+        case CmdId6::kClearErrors: {
             break; // Ignore commands coming from another master/host on the bus
         }
         default: {
@@ -222,14 +222,14 @@ void ODriveCanNode::request_state_callback() {
 
     if (axis_state != 0) {
         // Clear errors if requested state is not IDLE
-        frame.can_id = node_id_ << 5 | CmdId::kClearErrors;
+        frame.can_id = node_id_ << 5 | CmdId6::kClearErrors;
         write_le<uint8_t>(0, frame.data);
         frame.can_dlc = 1;
         send_can_frame_log(frame,"CLEAR_ERRORS");
     }
 
     // Set state
-    frame.can_id = node_id_ << 5 | CmdId::kSetAxisState;
+    frame.can_id = node_id_ << 5 | CmdId6::kSetAxisState;
     write_le<uint32_t>(axis_state, frame.data);
     frame.can_dlc = 4;
     send_can_frame_log(frame,"AXIS_STATE");
@@ -237,7 +237,7 @@ void ODriveCanNode::request_state_callback() {
 
 void ODriveCanNode::request_clear_errors_callback() {
     struct can_frame frame = {};
-    frame.can_id = node_id_ << 5 | CmdId::kClearErrors;
+    frame.can_id = node_id_ << 5 | CmdId6::kClearErrors;
     write_le<uint8_t>(0, frame.data);
     frame.can_dlc = 1;
     send_can_frame_log(frame,"CLEAR_ERRORS");

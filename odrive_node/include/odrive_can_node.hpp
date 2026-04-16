@@ -36,7 +36,7 @@ protected:
     bool send_can_frame_log(const can_frame& frame, const std::string& message) {
         bool success = can_intf_.send_can_frame(frame);
         if(!success){
-            ROS_ERROR_STREAM("[odrive_can_node] Failed to send CAN frame id=" << std::hex << std::showbase << std::uppercase << frame.can_id<<", "<<message);
+            ROS_ERROR("[odrive_can_node] Failed to send CAN frame id=0x%x, %s",frame.can_id,message.c_str());
         }
         return success;
     }

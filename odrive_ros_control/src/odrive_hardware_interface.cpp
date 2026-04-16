@@ -1,5 +1,5 @@
 #include "can_helpers.hpp"
-#include "can_simple_messages.hpp"
+#include "can_simple_messages_5.hpp"
 #include "odrive_enums.h"
 #include "odrive_can/ODriveStatus.h"
 #include "odrive_can/ControllerStatus.h"
@@ -222,7 +222,7 @@ void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Durati
             sent = axis.send_silent(msg);
         }
         if(!sent){
-            ROS_ERROR_STREAM_THROTTLE(2,"[odrive_hi] Failed to send can cmd message. Node id=" << axis.node_id_);
+            ROS_ERROR_THROTTLE(2,"[odrive_hi] Failed to send can cmd message. Node id=%d",axis.node_id_);
         }
         // no control enabled — don't send any setpoint
     }
@@ -383,18 +383,18 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             ctrl_pub_flag_ |= 0b0100;
             break;
         }
-        case Get_Torques_msg_t::cmd_id: {
-            if (frame.can_dlc < Get_Torques_msg_t::msg_length) {
-                message_too_short = true;
-                break;
-            }
-            Get_Torques_msg_t msg;
-            msg.decode_buf(frame.data);
-            torque_target_   = msg.Torque_Target;
-            torque_estimate_ = msg.Torque_Estimate;
-            ctrl_pub_flag_ |= 0b1000;
-            break;
-        }
+        // case Get_Torques_msg_t::cmd_id: {
+        //     if (frame.can_dlc < Get_Torques_msg_t::msg_length) {
+        //         message_too_short = true;
+        //         break;
+        //     }
+        //     Get_Torques_msg_t msg;
+        //     msg.decode_buf(frame.data);
+        //     torque_target_   = msg.Torque_Target;
+        //     torque_estimate_ = msg.Torque_Estimate;
+        //     ctrl_pub_flag_ |= 0b1000;
+        //     break;
+        // }
         case Get_Motor_Error_msg_t::cmd_id: {
             if (frame.can_dlc < Get_Motor_Error_msg_t::msg_length) {
                 message_too_short = true;
