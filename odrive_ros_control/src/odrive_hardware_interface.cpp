@@ -293,9 +293,10 @@ void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
 void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
     if (!axis.connected) {
         ROS_INFO("[odrive_hi] Skip control mode setup, axis '%s' is not connected. ",axis.joint_name_.c_str());
+        return;
     }
     if (!active_) {
-        ROS_INFO("[odrive_hi] Interface inactive. Setting axis to idle.");
+        ROS_INFO("[odrive_hi] Interface inactive. Setting '%s' to idle.",axis.joint_name_.c_str());
         Set_Axis_State_msg_t idle_msg;
         idle_msg.Axis_Requested_State = AXIS_STATE_IDLE;
         axis.send_log(idle_msg,"AXIS_STATE_IDLE");
@@ -311,16 +312,16 @@ void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
     state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
 
     if (axis.pos_input_enabled_) {
-        ROS_INFO("[odrive_hi] Setting to position control.");
+        ROS_INFO("[odrive_hi] Setting '%s' to position control.",axis.joint_name_.c_str());
         control_msg.Control_Mode = CONTROL_MODE_POSITION_CONTROL;
     } else if (axis.vel_input_enabled_) {
-        ROS_INFO("[odrive_hi] Setting to velocity control.");
+        ROS_INFO("[odrive_hi] Setting '%s' to velocity control.",axis.joint_name_.c_str());
         control_msg.Control_Mode = CONTROL_MODE_VELOCITY_CONTROL;
     } else if (axis.torque_input_enabled_) {
-        ROS_INFO("[odrive_hi] Setting to torque control.");
+        ROS_INFO("[odrive_hi] Setting '%s' to torque control.",axis.joint_name_.c_str());
         control_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
     } else {
-        ROS_INFO("[odrive_hi] No control mode. Setting to idle.");
+        ROS_INFO("[odrive_hi] No control mode. Setting '%s' to idle.",axis.joint_name_.c_str());
         state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
         axis.send_log(state_msg,"AXIS_STATE_IDLE");
         return;
