@@ -125,14 +125,15 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
                 axis.joint_name_.c_str(),
                 (time - axis.last_heartbeat_stamp_).toSec());
         }else{
-            if(!axis.connected){
+            bool prev_connected_state = axis.connected;
+            axis.connected = true;
+            if(!prev_connected_state){
                 ROS_INFO("[odrive_hi] '%s': axis connected",axis.joint_name_.c_str());
                 //init stamps with current time so we can collect mesages after connection
                 axis.ctrl_sent_status_stamp_ = time;
                 axis.odrv_sent_status_stamp_ = time;
                 set_axis_command_mode(axis);
             }
-            axis.connected = true;
         }
         bool odrv_timeout  = (time - axis.odrv_sent_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
 
