@@ -130,6 +130,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
                 //init stamps with current time so we can collect mesages after connection
                 axis.ctrl_sent_status_stamp_ = time;
                 axis.odrv_sent_status_stamp_ = time;
+                set_axis_command_mode(axis);
             }
             axis.connected = true;
         }
@@ -151,7 +152,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
             msg.bus_current       = axis.bus_current_;
 
             if (odrv_timeout && !odrv_complete) {
-                ROS_WARN("[odrive_hi] '%s': ODriveStatus timeout (missing fields: 0b%03d), last received %.1fs ago",
+                ROS_WARN("[odrive_hi] '%s': ODriveStatus timeout (missing fields: 0x%x), last received %.1fs ago",
                     axis.joint_name_.c_str(),
                     axis.odrv_pub_flag_,
                     (time - axis.odrv_sent_status_stamp_).toSec());
@@ -190,7 +191,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
             //msg.torque_estimate      = axis.torque_estimate_;
 
             if (ctrl_timeout && !ctrl_complete) {
-                ROS_WARN("[odrive_hi] '%s': ControllerStatus timeout (missing fields: 0b%04d), last received %.1fs ago",
+                ROS_WARN("[odrive_hi] '%s': ControllerStatus timeout (missing fields: 0x%x), last received %.1fs ago",
                     axis.joint_name_.c_str(),
                     axis.ctrl_pub_flag_,
                     (time - axis.ctrl_sent_status_stamp_).toSec());
@@ -290,6 +291,9 @@ void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
 }
 
 void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
+    if (!axis.connected) {
+        ROS_INFO("[odrive_hi] Skip control mode setup, axis '%s' is not connected. ",axis.joint_name_.c_str());
+    }
     if (!active_) {
         ROS_INFO("[odrive_hi] Interface inactive. Setting axis to idle.");
         Set_Axis_State_msg_t idle_msg;
