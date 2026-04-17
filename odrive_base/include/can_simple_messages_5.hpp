@@ -163,6 +163,33 @@ struct Estop_msg_t final {
     
 };
 
+struct Request_Get_Motor_Error_msg_t final {
+    constexpr Request_Get_Motor_Error_msg_t() = default;
+
+#ifdef ODRIVE_CAN_MSG_TYPE
+    Request_Get_Motor_Error_msg_t(const TBoard::TCanIntf::TMsg& msg) {
+        decode_msg(msg);
+    }
+
+    void encode_msg(TBoard::TCanIntf::TMsg& msg) {
+        encode_buf(can_msg_get_payload(msg).data());
+    }
+
+    void decode_msg(const TBoard::TCanIntf::TMsg& msg) {
+        decode_buf(can_msg_get_payload(msg).data());
+    }
+#endif
+
+    void encode_buf(uint8_t* buf) const {
+    }
+
+    void decode_buf(const uint8_t* buf) {
+    }
+
+    static const uint8_t cmd_id = 0x003;
+    static const uint8_t msg_length = 0;
+};
+
 struct Get_Motor_Error_msg_t final {
     constexpr Get_Motor_Error_msg_t() = default;
 
@@ -196,6 +223,7 @@ struct Get_Motor_Error_msg_t final {
     uint32_t Active_Errors = 0;
     uint32_t Disarm_Reason = 0;
 };
+
 
 struct Address_msg_t final {
     constexpr Address_msg_t() = default;

@@ -211,7 +211,7 @@ void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Durati
             continue;
         }
         if (axis.axis_errors_!=AXIS_ERROR_NONE) {
-            Get_Motor_Error_msg_t msg;
+            Request_Get_Motor_Error_msg_t msg;
             if(!axis.send_silent(msg)){
                 ROS_ERROR_THROTTLE(1,"[odrive_hi] Failed to request motor error. Node id=%d",axis.node_id_);
             }
