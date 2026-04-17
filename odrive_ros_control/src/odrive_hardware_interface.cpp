@@ -210,6 +210,13 @@ void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Durati
         if(!axis.connected){
             continue;
         }
+        if (axis.axis_errors_!=AXIS_ERROR_NONE) {
+            Get_Motor_Error_msg_t msg;
+            if(!axis.send_silent(msg)){
+                ROS_ERROR_THROTTLE(1,"[odrive_hi] Failed to request motor error. Node id=%d",axis.node_id_);
+            }
+        }
+
         bool sent = true;
         if (axis.pos_input_enabled_) {
             Set_Input_Pos_msg_t msg;
@@ -426,6 +433,7 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             msg.decode_buf(frame.data);
             motor_errors_ = msg.Active_Errors;
             disarm_reason_ = msg.Disarm_Reason;
+            ROS_ERROR("[odrive_hi] Received '%s' motor error 0x%x",joint_name_.c_str(),motor_errors_);
             //odrv_pub_flag_ |= 0b001;
             break;
         }
