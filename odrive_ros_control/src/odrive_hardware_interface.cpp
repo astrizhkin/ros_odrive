@@ -207,6 +207,9 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 
 void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Duration& /*period*/) {
     for (auto& axis : axes_) {
+        if(!axis.connected){
+            continue;
+        }
         bool sent = true;
         if (axis.pos_input_enabled_) {
             Set_Input_Pos_msg_t msg;
@@ -225,7 +228,7 @@ void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Durati
             sent = axis.send_silent(msg);
         }
         if(!sent){
-            ROS_ERROR_THROTTLE(2,"[odrive_hi] Failed to send can cmd message. Node id=%d",axis.node_id_);
+            ROS_ERROR_THROTTLE(1,"[odrive_hi] Failed to send can cmd message. Node id=%d",axis.node_id_);
         }
         // no control enabled — don't send any setpoint
     }
