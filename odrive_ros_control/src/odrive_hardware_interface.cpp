@@ -210,7 +210,7 @@ void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Durati
         if(!axis.connected){
             continue;
         }
-        if (axis.axis_errors_!=AXIS_ERROR_NONE) {
+        if (axis.axis_errors_!=AXIS_ERROR_NONE && axis.axis_errors_!=AXIS_ERROR_WATCHDOG_TIMER_EXPIRED) {
             Request_Get_Motor_Error_msg_t msg;
             if(!axis.send_silent(msg)){
                 ROS_ERROR_THROTTLE(1,"[odrive_hi] Failed to request motor error. Node id=%d",axis.node_id_);
@@ -254,12 +254,15 @@ void ODriveHardwareInterface::doSwitch(
             for (const auto& resource : ctrl.claimed_resources) {
                 for (const auto& joint : resource.resources) {
                     if (joint != axis.joint_name_) continue;
-                    if (resource.hardware_interface == "hardware_interface::PositionJointInterface")
-                        { axis.pos_input_enabled_    = false; mode_switch = true; }
-                    if (resource.hardware_interface == "hardware_interface::VelocityJointInterface")
-                        { axis.vel_input_enabled_    = false; mode_switch = true; }
-                    if (resource.hardware_interface == "hardware_interface::EffortJointInterface")
-                        { axis.torque_input_enabled_ = false; mode_switch = true; }
+                    if (resource.hardware_interface == "hardware_interface::PositionJointInterface") { 
+                        axis.pos_input_enabled_    = false; mode_switch = true; 
+                    }
+                    if (resource.hardware_interface == "hardware_interface::VelocityJointInterface") { 
+                        axis.vel_input_enabled_    = false; mode_switch = true; 
+                    }
+                    if (resource.hardware_interface == "hardware_interface::EffortJointInterface") { 
+                        axis.torque_input_enabled_ = false; mode_switch = true; 
+                    }
                 }
             }
         }
@@ -269,12 +272,15 @@ void ODriveHardwareInterface::doSwitch(
             for (const auto& resource : ctrl.claimed_resources) {
                 for (const auto& joint : resource.resources) {
                     if (joint != axis.joint_name_) continue;
-                    if (resource.hardware_interface == "hardware_interface::PositionJointInterface")
-                        { axis.pos_input_enabled_    = true; mode_switch = true; }
-                    if (resource.hardware_interface == "hardware_interface::VelocityJointInterface")
-                        { axis.vel_input_enabled_    = true; mode_switch = true; }
-                    if (resource.hardware_interface == "hardware_interface::EffortJointInterface")
-                        { axis.torque_input_enabled_ = true; mode_switch = true; }
+                    if (resource.hardware_interface == "hardware_interface::PositionJointInterface") { 
+                        axis.pos_input_enabled_    = true; mode_switch = true; 
+                    }
+                    if (resource.hardware_interface == "hardware_interface::VelocityJointInterface") { 
+                        axis.vel_input_enabled_    = true; mode_switch = true; 
+                    }
+                    if (resource.hardware_interface == "hardware_interface::EffortJointInterface") { 
+                        axis.torque_input_enabled_ = true; mode_switch = true; 
+                    }
                 }
             }
         }
