@@ -253,6 +253,7 @@ void ODriveHardwareInterface::doSwitch(
         for (const auto& ctrl : stop_list) {
             for (const auto& resource : ctrl.claimed_resources) {
                 for (const auto& joint : resource.resources) {
+                    ROS_INFO("[odrive_hi] doSwitch stop '%s'/'%s'",joint.c_str(),resource.hardware_interface.c_str());
                     if (joint != axis.joint_name_) continue;
                     if (resource.hardware_interface == "hardware_interface::PositionJointInterface") { 
                         axis.pos_input_enabled_    = false; mode_switch = true; 
@@ -271,6 +272,7 @@ void ODriveHardwareInterface::doSwitch(
         for (const auto& ctrl : start_list) {
             for (const auto& resource : ctrl.claimed_resources) {
                 for (const auto& joint : resource.resources) {
+                    ROS_INFO("[odrive_hi] doSwitch start '%s'/'%s'",joint.c_str(),resource.hardware_interface.c_str());
                     if (joint != axis.joint_name_) continue;
                     if (resource.hardware_interface == "hardware_interface::PositionJointInterface") { 
                         axis.pos_input_enabled_    = true; mode_switch = true; 
