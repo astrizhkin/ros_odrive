@@ -296,7 +296,7 @@ void ODriveHardwareInterface::doSwitch(
 void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
     bool axis_found = false;
     uint32_t can_id = (frame.can_id >> 5);
-    uint8_t can_cmd = frame.can_id & 0x1f;
+    //uint8_t can_cmd = frame.can_id & 0x1f;
     for (auto& axis : axes_) {
         if (can_id == axis.node_id_) {
             axis_found = true;
