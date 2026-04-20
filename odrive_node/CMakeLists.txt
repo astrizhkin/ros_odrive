@@ -52,7 +52,7 @@ add_executable(odrive_can_node
   include/odrive_can_node.hpp
 )
 
-target_compile_features(odrive_can_node PRIVATE cxx_std_17)
+#target_compile_features(odrive_can_node PRIVATE cxx_std_17)
 
 add_dependencies(odrive_can_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}

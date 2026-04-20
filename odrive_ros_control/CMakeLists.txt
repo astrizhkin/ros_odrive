@@ -41,7 +41,7 @@ add_executable(odrive_ros_control_node
   src/main.cpp 
 )
 
-target_compile_features(odrive_ros_control_node PRIVATE cxx_std_17)
+#target_compile_features(odrive_ros_control_node PRIVATE cxx_std_17)
 target_link_libraries(odrive_ros_control_node
   ${catkin_LIBRARIES}
 )
@@ -56,7 +56,7 @@ add_dependencies(
   odrive_can_generate_messages_cpp
 )
 
-target_compile_features(odrive_ros_control_plugin PRIVATE cxx_std_17)
+#target_compile_features(odrive_ros_control_plugin PRIVATE cxx_std_17)
 
 target_link_libraries(odrive_ros_control_plugin
   ${catkin_LIBRARIES}
