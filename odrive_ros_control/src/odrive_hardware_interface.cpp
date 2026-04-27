@@ -358,8 +358,7 @@ void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
 //+axis.config.can.heartbeat_rate_ms = 100
 //axis.config.can.sensorless_rate_ms
 //axis.config.can.encoder_count_rate_ms
-//axis.config.can.controller_error_rate_ms
-//axis.config.can.encoder_error_rate_ms
+//axis.config.can.controller_encoder_error_rate_ms
 //+axis.config.can.motor_error_rate_ms
 //axis.config.can.sensorless_error_rate_ms
 
