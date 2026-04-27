@@ -12,33 +12,34 @@
 //        MSG_ODRIVE_HEARTBEAT = 0x001,
 //        MSG_ODRIVE_ESTOP,
 //        MSG_GET_MOTOR_ERROR = 0x003,  // Errors
-//        MSG_GET_ENCODER_ERROR,
-//        MSG_GET_SENSORLESS_ERROR,
-//        MSG_SET_AXIS_NODE_ID,
-//        MSG_SET_AXIS_REQUESTED_STATE,
-//        MSG_SET_AXIS_STARTUP_CONFIG,
+//        MSG_CAN_SDO_RX = 0x004,       // SDO
+//        MSG_CAN_SDO_TX = 0x005,       // SDO
+//        MSG_SET_AXIS_NODE_ID = 0x006,
+//        MSG_SET_AXIS_REQUESTED_STATE = 0x007,
+//        MSG_SET_AXIS_STARTUP_CONFIG = 0x008,
 //        MSG_GET_ENCODER_ESTIMATES = 0x009,
 //        MSG_GET_ENCODER_COUNT = 0x00A,
-//        MSG_SET_CONTROLLER_MODES,
-//        MSG_SET_INPUT_POS,
-//        MSG_SET_INPUT_VEL,
-//        MSG_SET_INPUT_TORQUE,
-//        MSG_SET_LIMITS,
-//        MSG_START_ANTICOGGING,
-//        MSG_SET_TRAJ_VEL_LIMIT,
-//        MSG_SET_TRAJ_ACCEL_LIMITS,
-//        MSG_SET_TRAJ_INERTIA,
+//        MSG_SET_CONTROLLER_MODES = 0x00B,
+//        MSG_SET_INPUT_POS = 0x00C,
+//        MSG_SET_INPUT_VEL = 0x00D,
+//        MSG_SET_INPUT_TORQUE = 0x00E,
+//        MSG_SET_LIMITS = 0x00F,
+//        MSG_START_ANTICOGGING = 0x010,
+//        MSG_SET_TRAJ_VEL_LIMIT = 0x011,
+//        MSG_SET_TRAJ_ACCEL_LIMITS = 0x012,
+//        MSG_SET_TRAJ_INERTIA = 0x013,
 //        MSG_GET_IQ = 0x014,
 //        MSG_GET_SENSORLESS_ESTIMATES = 0x015,
-//        MSG_RESET_ODRIVE= 0x016,
+//        MSG_RESET_ODRIVE = 0x016,
 //        MSG_GET_BUS_VOLTAGE_CURRENT = 0x017,
 //        MSG_CLEAR_ERRORS = 0x018,
 //        MSG_SET_LINEAR_COUNT = 0x019,
 //        MSG_SET_POS_GAIN = 0x01A,
 //        MSG_SET_VEL_GAINS = 0x01B,
 //        MSG_GET_ADC_VOLTAGE = 0x01C,
-//        MSG_GET_CONTROLLER_ERROR 0x01D,
-//NEW     MSG_GET_TEMPERATURES 0x01E,
+//        MSG_GET_CONTROLLER_ENCODER_ERROR = 0x01D,
+//        MSG_GET_TEMPERATURE = 0x01E,
+//        MSG_ENTER_DFU_MODE = 0x01F,
 //        MSG_CO_HEARTBEAT_CMD = 0x700,  // CANOpen NMT Heartbeat  SEND
 //    };
 
@@ -851,6 +852,38 @@ struct Set_Vel_Gains_msg_t final {
     float Vel_Integrator_Gain = 0.0f; // [Nm / rev]
 };
 
+struct Get_Controller_Encoder_Error_msg_t final {
+    constexpr Get_Controller_Encoder_Error_msg_t() = default;
+
+#ifdef ODRIVE_CAN_MSG_TYPE
+    Get_Controller_Encoder_Error_msg_t(const TBoard::TCanIntf::TMsg& msg) {
+        decode_msg(msg);
+    }
+
+    void encode_msg(TBoard::TCanIntf::TMsg& msg) {
+        encode_buf(can_msg_get_payload(msg).data());
+    }
+
+    void decode_msg(const TBoard::TCanIntf::TMsg& msg) {
+        decode_buf(can_msg_get_payload(msg).data());
+    }
+#endif
+
+    void encode_buf(uint8_t* buf) const {
+    }
+
+    void decode_buf(const uint8_t* buf) {
+        Controller_Error = can_get_signal_raw<uint32_t>(buf, 0, 32, true);
+        Encoder_Error = can_get_signal_raw<uint32_t>(buf, 32, 32, true);
+    }
+
+    static const uint8_t cmd_id = 0x01D;
+    static const uint8_t msg_length = 8;
+
+    uint32_t Controller_Error = 0;
+    uint32_t Encoder_Error = 0;
+};
+
 struct Get_Temperature_msg_t final {
     constexpr Get_Temperature_msg_t() = default;
 
@@ -880,8 +913,36 @@ struct Get_Temperature_msg_t final {
 
     static const uint8_t cmd_id = 0x01E;
     static const uint8_t msg_length = 8;
-    
+
     float FET_Temperature = 0.0f; // [deg C]
     float Motor_Temperature = 0.0f; // [deg C]
+};
+
+struct Enter_DFU_Mode_msg_t final {
+    constexpr Enter_DFU_Mode_msg_t() = default;
+
+#ifdef ODRIVE_CAN_MSG_TYPE
+    Enter_DFU_Mode_msg_t(const TBoard::TCanIntf::TMsg& msg) {
+        decode_msg(msg);
+    }
+
+    void encode_msg(TBoard::TCanIntf::TMsg& msg) {
+        encode_buf(can_msg_get_payload(msg).data());
+    }
+
+    void decode_msg(const TBoard::TCanIntf::TMsg& msg) {
+        decode_buf(can_msg_get_payload(msg).data());
+    }
+#endif
+
+    void encode_buf(uint8_t* buf) const {
+    }
+
+    void decode_buf(const uint8_t* buf) {
+    }
+
+    static const uint8_t cmd_id = 0x01F;
+    static const uint8_t msg_length = 0;
+
 };
 
