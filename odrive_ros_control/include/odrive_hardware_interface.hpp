@@ -1,11 +1,30 @@
 #include <hardware_interface/robot_hw.h>
 #include <hardware_interface/joint_state_interface.h>
 #include <hardware_interface/joint_command_interface.h>
+#include "odrive_ros_control/SDO.h"
 #include "odrive_enums.h"
 #include "ros/ros.h"
 #include "socket_can.hpp"
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 
 namespace odrive_ros_control {
+
+struct SDOTransaction {
+    enum SdoState : uint8_t { SDO_IDLE, SDO_PENDING, SDO_WAITING, SDO_DONE, SDO_TIMEOUT };
+
+    SdoState sdo_state_ = SDO_IDLE;
+    uint8_t  sdo_opcode_ = 0;
+    uint16_t sdo_endpoint_id_ = 0;
+    uint32_t sdo_request_value_ = 0;
+    uint32_t sdo_response_value_ = 0;
+    uint8_t  sdo_return_code_ = 0;
+    ros::Time sdo_timeout_start_;
+    float    sdo_timeout_sec_ = 0.5f;
+    std::mutex sdo_mutex_;
+    std::condition_variable sdo_cv_;
+};
 
 class Axis;
 
@@ -41,6 +60,10 @@ private:
     // Status publishing
     ros::Publisher odrive_status_pub_;
     ros::Publisher controller_status_pub_;
+
+    // SDO service
+    ros::ServiceServer sdo_service_;
+    bool sdo_service_callback(odrive_ros_control::SDORequest& req, odrive_ros_control::SDOResponse& res);
 };
 
 struct Axis {
@@ -105,6 +128,8 @@ struct Axis {
     // ControllerStatus needs: heartbeat(0001) + encoder(0010) + iq(0100) + torques(1000) = 0b1111
     short int odrv_pub_flag_ = 0;
     short int ctrl_pub_flag_ = 0;
+
+    std::unique_ptr<SDOTransaction> sdo_transaction_ = nullptr;
 
     template <typename T>
     bool send_silent(const T& msg) const {

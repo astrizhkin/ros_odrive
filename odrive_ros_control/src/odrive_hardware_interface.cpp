@@ -7,11 +7,12 @@
 #include "odrive_hardware_interface.hpp"
 
 #include <cmath>
+#include <thread>
 
 using namespace odrive_ros_control;
 
 static constexpr double STATUS_TIMEOUT_SEC = 1.0;
-static constexpr double HEARTBEAT_TIMEOUT_SEC  = 2.0;
+static constexpr double HEARTBEAT_TIMEOUT_SEC  = 0.5;
 
 ODriveHardwareInterface::ODriveHardwareInterface() : active_(false) {}
 
@@ -83,6 +84,9 @@ bool ODriveHardwareInterface::init(ros::NodeHandle& /*root_nh*/, ros::NodeHandle
     odrive_status_pub_     = robot_hw_nh.advertise<odrive_can::ODriveStatus>("odrive_status", 10);
     controller_status_pub_ = robot_hw_nh.advertise<odrive_can::ControllerStatus>("controller_status", 10);
 
+    // SDO service
+    sdo_service_ = robot_hw_nh.advertiseService("sdo", &ODriveHardwareInterface::sdo_service_callback, this);
+
     // Initialize CAN interface
     if (!can_intf_.init(can_intf_name_, &event_loop_,
         std::bind(&ODriveHardwareInterface::on_can_msg, this, std::placeholders::_1))) {
@@ -107,6 +111,14 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
     }
 
     for (auto& axis : axes_) {
+        // SDO timeout check
+        if (axis.sdo_transaction_ &&
+            axis.sdo_transaction_->sdo_state_ == SDOTransaction::SDO_WAITING &&
+            (time - axis.sdo_transaction_->sdo_timeout_start_).toSec() > axis.sdo_transaction_->sdo_timeout_sec_) {
+            axis.sdo_transaction_->sdo_state_ = SDOTransaction::SDO_TIMEOUT;
+            axis.sdo_transaction_->sdo_cv_.notify_one();
+        }
+
         //init time for first timout
         if(axis.odrv_sent_status_stamp_==ros::Time::ZERO) {
             axis.odrv_sent_status_stamp_ = time;
@@ -207,7 +219,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 
 void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Duration& /*period*/) {
     for (auto& axis : axes_) {
-        if(!axis.connected){
+        if(!axis.connected) {
             continue;
         }
         if (axis.axis_errors_!=AXIS_ERROR_NONE && axis.axis_errors_!=AXIS_ERROR_WATCHDOG_TIMER_EXPIRED) {
@@ -237,6 +249,18 @@ void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Durati
         if(!sent){
             ROS_ERROR_THROTTLE(1,"[odrive_hi] Failed to send can cmd message. Node id=%d",axis.node_id_);
         }
+
+        // SDO request send
+        if (axis.sdo_transaction_ &&
+            axis.sdo_transaction_->sdo_state_ == SDOTransaction::SDO_PENDING) {
+            SDO_Request_msg_t msg;
+            msg.Opcode = axis.sdo_transaction_->sdo_opcode_;
+            msg.Endpoint_ID = axis.sdo_transaction_->sdo_endpoint_id_;
+            msg.Value = axis.sdo_transaction_->sdo_request_value_;
+            axis.send_silent(msg);
+            axis.sdo_transaction_->sdo_state_ = SDOTransaction::SDO_WAITING;
+        }
+
         // no control enabled — don't send any setpoint
     }
 }
@@ -351,6 +375,54 @@ void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
     axis.send_log(state_msg,"state_msg");
 }
 
+bool ODriveHardwareInterface::sdo_service_callback(odrive_ros_control::SDORequest& req, odrive_ros_control::SDOResponse& res) {
+    // Find axis by name
+    Axis* target = nullptr;
+    for (auto& axis : axes_) {
+        if (axis.joint_name_ == req.axis_name) {
+            target = &axis;
+            break;
+        }
+    }
+    if (!target) {
+        ROS_ERROR("[odrive_hi] SDO: unknown axis '%s'", req.axis_name.c_str());
+        res.success = false;
+        res.return_code = 0xFF;
+        res.value = 0;
+        return false;
+    }
+
+    // Create a new SDO transaction
+    auto transaction = std::make_unique<SDOTransaction>();
+    transaction->sdo_opcode_ = req.opcode;
+    transaction->sdo_endpoint_id_ = req.endpoint_id;
+    transaction->sdo_request_value_ = req.value;
+    transaction->sdo_timeout_sec_ = req.timeout_sec > 0.0f ? req.timeout_sec : 0.5f;
+    transaction->sdo_timeout_start_ = ros::Time::now();
+    transaction->sdo_state_ = SDOTransaction::SDO_PENDING;
+
+    // Assign to axis (replaces any previous transaction)
+    target->sdo_transaction_ = std::move(transaction);
+
+    // Wait for the main loop to complete the transaction
+    std::unique_lock<std::mutex> lock(target->sdo_transaction_->sdo_mutex_);
+    target->sdo_transaction_->sdo_cv_.wait(lock, [target]() {
+        return target->sdo_transaction_->sdo_state_ == SDOTransaction::SDO_DONE ||
+               target->sdo_transaction_->sdo_state_ == SDOTransaction::SDO_TIMEOUT;
+    });
+
+    bool ok = target->sdo_transaction_->sdo_state_ == SDOTransaction::SDO_DONE;
+    res.success = ok;
+    res.return_code = target->sdo_transaction_->sdo_return_code_;
+    res.value = target->sdo_transaction_->sdo_response_value_;
+
+    if (!ok) {
+        ROS_WARN("[odrive_hi] SDO timeout for axis '%s' endpoint 0x%x", req.axis_name.c_str(), req.endpoint_id);
+    }
+
+    return ok;
+}
+
 //messages we can enable
 //+axis.config.can.iq_rate_ms
 //+axis.config.can.bus_vi_rate_ms
@@ -454,6 +526,20 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             fet_temperature_   = msg.FET_Temperature;
             motor_temperature_ = msg.Motor_Temperature;
             odrv_pub_flag_ |= 0b010;
+            break;
+        }
+        case SDO_Response_msg_t::cmd_id: {
+            if (!sdo_transaction_ || sdo_transaction_->sdo_state_ != SDOTransaction::SDO_WAITING) { break; }
+            if (frame.can_dlc < SDO_Response_msg_t::msg_length) {
+                message_too_short = true;
+                break;
+            }
+            SDO_Response_msg_t msg;
+            msg.decode_buf(frame.data);
+            sdo_transaction_->sdo_response_value_ = msg.Value;
+            sdo_transaction_->sdo_return_code_ = msg.Return_Code;
+            sdo_transaction_->sdo_state_ = SDOTransaction::SDO_DONE;
+            sdo_transaction_->sdo_cv_.notify_one();
             break;
         }
         case Get_Bus_Voltage_Current_msg_t::cmd_id: {

@@ -191,6 +191,80 @@ struct Request_Get_Motor_Error_msg_t final {
     static const uint8_t msg_length = 0;
 };
 
+struct SDO_Request_msg_t final {
+    constexpr SDO_Request_msg_t() = default;
+
+#ifdef ODRIVE_CAN_MSG_TYPE
+    SDO_Request_msg_t(const TBoard::TCanIntf::TMsg& msg) {
+        decode_msg(msg);
+    }
+
+    void encode_msg(TBoard::TCanIntf::TMsg& msg) {
+        encode_buf(can_msg_get_payload(msg).data());
+    }
+
+    void decode_msg(const TBoard::TCanIntf::TMsg& msg) {
+        decode_buf(can_msg_get_payload(msg).data());
+    }
+#endif
+
+    void encode_buf(uint8_t* buf) const {
+        can_set_signal_raw<uint8_t>(buf, Opcode, 0, 8, true);
+        can_set_signal_raw<uint16_t>(buf, Endpoint_ID, 8, 16, true);
+        can_set_signal_raw<uint32_t>(buf, Value, 32, 32, true);
+    }
+
+    void decode_buf(const uint8_t* buf) {
+        Opcode = can_get_signal_raw<uint8_t>(buf, 0, 8, true);
+        Endpoint_ID = can_get_signal_raw<uint16_t>(buf, 8, 16, true);
+        Value = can_get_signal_raw<uint32_t>(buf, 32, 32, true);
+    }
+
+    static const uint8_t cmd_id = 0x004;
+    static const uint8_t msg_length = 8;
+
+    uint8_t  Opcode = 0;
+    uint16_t Endpoint_ID = 0;
+    uint32_t Value = 0;
+};
+
+struct SDO_Response_msg_t final {
+    constexpr SDO_Response_msg_t() = default;
+
+#ifdef ODRIVE_CAN_MSG_TYPE
+    SDO_Response_msg_t(const TBoard::TCanIntf::TMsg& msg) {
+        decode_msg(msg);
+    }
+
+    void encode_msg(TBoard::TCanIntf::TMsg& msg) {
+        encode_buf(can_msg_get_payload(msg).data());
+    }
+
+    void decode_msg(const TBoard::TCanIntf::TMsg& msg) {
+        decode_buf(can_msg_get_payload(msg).data());
+    }
+#endif
+
+    void encode_buf(uint8_t* buf) const {
+        can_set_signal_raw<uint8_t>(buf, Return_Code, 0, 8, true);
+        can_set_signal_raw<uint16_t>(buf, Endpoint_ID, 8, 16, true);
+        can_set_signal_raw<uint32_t>(buf, Value, 32, 32, true);
+    }
+
+    void decode_buf(const uint8_t* buf) {
+        Return_Code = can_get_signal_raw<uint8_t>(buf, 0, 8, true);
+        Endpoint_ID = can_get_signal_raw<uint16_t>(buf, 8, 16, true);
+        Value = can_get_signal_raw<uint32_t>(buf, 32, 32, true);
+    }
+
+    static const uint8_t cmd_id = 0x005;
+    static const uint8_t msg_length = 8;
+
+    uint8_t  Return_Code = 0;
+    uint16_t Endpoint_ID = 0;
+    uint32_t Value = 0;
+};
+
 struct Get_Motor_Error_msg_t final {
     constexpr Get_Motor_Error_msg_t() = default;
 

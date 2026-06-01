@@ -12,13 +12,25 @@ find_package(catkin REQUIRED COMPONENTS
   controller_manager
   odrive_can
   pluginlib
+  message_generation
+)
+
+# Declare custom services
+add_service_files(
+  FILES
+  SDO.srv
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
 )
 
 # Declare catkin package
 catkin_package(
   INCLUDE_DIRS include ../odrive_base/include
   LIBRARIES odrive_ros_control_plugin
-  CATKIN_DEPENDS roscpp hardware_interface controller_manager odrive_can pluginlib
+  CATKIN_DEPENDS roscpp hardware_interface controller_manager odrive_can pluginlib message_runtime
 )
 
 include_directories(
@@ -48,12 +60,14 @@ target_link_libraries(odrive_ros_control_node
 add_dependencies(odrive_ros_control_plugin
   ${catkin_EXPORTED_TARGETS}
   odrive_can_generate_messages_cpp
+  ${PROJECT_NAME}_generate_messages_cpp
 )
 add_dependencies(
   odrive_ros_control_node
   ${catkin_EXPORTED_TARGETS}
   # explicit dependency on odrive_can message generation
   odrive_can_generate_messages_cpp
+  ${PROJECT_NAME}_generate_messages_cpp
 )
 
 #target_compile_features(odrive_ros_control_plugin PRIVATE cxx_std_17)

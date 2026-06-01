@@ -1,0 +1,9 @@
+string  axis_name
+uint8   opcode            # 0=READ, 1=WRITE
+uint16  endpoint_id
+uint32  value             # raw 4 bytes (bitcast: float32 or uint32 depending on endpoint type)
+float32 timeout_sec       # seconds to wait for response
+---
+bool    success
+uint8   return_code       # 0=success, 6=error
+uint32  value             # raw 4 bytes from firmware response
