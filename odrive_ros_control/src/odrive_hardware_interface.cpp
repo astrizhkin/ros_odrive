@@ -8,11 +8,16 @@
 
 #include <cmath>
 #include <thread>
+#include <linux/can/error.h>
 
 using namespace odrive_ros_control;
 
-static constexpr double STATUS_TIMEOUT_SEC = 1.0;
-static constexpr double HEARTBEAT_TIMEOUT_SEC  = 0.5;
+static constexpr double STATUS_TIMEOUT_SEC   = 1.0;
+static constexpr double HEARTBEAT_TIMEOUT_SEC = 0.5;
+static constexpr double INIT_DELAY_SEC        = 0.2;
+static constexpr double INIT_CONFIRM_SEC      = 0.5;
+static constexpr uint32_t INIT_RETRY_LIMIT    = 3;
+static constexpr double SEND_FAIL_COOLDOWN    = 0.2;
 
 ODriveHardwareInterface::ODriveHardwareInterface() : active_(false) {}
 
@@ -133,20 +138,49 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
         bool connected_now = (time - axis.last_heartbeat_stamp_).toSec() < HEARTBEAT_TIMEOUT_SEC;
         if (!connected_now) {
             axis.connected = false;
-            ROS_WARN_THROTTLE(5.0, "[odrive_hi] '%s': no heartbeat for %.1fs",
+            axis.init_state_ = INIT_IDLE;
+            ROS_WARN_THROTTLE(5.0, "[odrive_hi] '%s': disconnected, no heartbeat for %.1fs",
                 axis.joint_name_.c_str(),
                 (time - axis.last_heartbeat_stamp_).toSec());
-        }else{
+        } else {
             bool prev_connected_state = axis.connected;
             axis.connected = true;
-            if(!prev_connected_state){
-                ROS_INFO("[odrive_hi] '%s': axis connected",axis.joint_name_.c_str());
+            if (!prev_connected_state) {
+                ROS_INFO("[odrive_hi] '%s': axis connected, axis state %d, axis errors %d",axis.joint_name_.c_str(),axis.axis_state_, axis.axis_errors_);
                 //init stamps with current time so we can collect mesages after connection
                 axis.ctrl_sent_status_stamp_ = time;
                 axis.odrv_sent_status_stamp_ = time;
-                set_axis_command_mode(axis);
+                axis.send_fail_last_time_ = {};
+                axis.init_start_time_ = time;
+                axis.init_retry_count_ = 0;
+                axis.init_state_ = INIT_DELAY;
             }
         }
+
+        // Init state machine
+        if (axis.init_state_ == INIT_DELAY) {
+            if ((time - axis.init_start_time_).toSec() >= INIT_DELAY_SEC) {
+                set_axis_command_mode(axis);
+                axis.init_state_ = INIT_SENT;
+            }
+        } else if (axis.init_state_ == INIT_SENT) {
+            if (axis.axis_state_ == AXIS_STATE_CLOSED_LOOP_CONTROL && axis.axis_errors_ == 0) {
+                ROS_WARN("[odrive_hi] '%s': init done", axis.joint_name_.c_str());
+                axis.init_state_ = INIT_IDLE;
+            } else if ((time - axis.init_start_time_).toSec() >= INIT_CONFIRM_SEC) {
+                axis.init_retry_count_++;
+                if (axis.init_retry_count_ >= INIT_RETRY_LIMIT) {
+                    ROS_ERROR("[odrive_hi] '%s': init failed after %u retries", axis.joint_name_.c_str(), INIT_RETRY_LIMIT);
+                    axis.connected = false;
+                    axis.init_state_ = INIT_IDLE;
+                } else {
+                    ROS_WARN("[odrive_hi] '%s': init retry %u/%u", axis.joint_name_.c_str(), axis.init_retry_count_, INIT_RETRY_LIMIT);
+                    axis.init_start_time_ = time;
+                    set_axis_command_mode(axis);
+                }
+            }
+        }
+
         bool odrv_timeout  = (time - axis.odrv_sent_status_stamp_).toSec() > STATUS_TIMEOUT_SEC;
 
         if (odrv_complete || odrv_timeout) {
@@ -217,16 +251,42 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
     }
 }
 
-void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Duration& /*period*/) {
+void ODriveHardwareInterface::write(const ros::Time& time, const ros::Duration& /*period*/) {
     for (auto& axis : axes_) {
-        if(!axis.connected) {
+        if (!axis.connected) {
+            axis.send_fail_last_time_ = {};
             continue;
         }
-        if (axis.axis_errors_!=AXIS_ERROR_NONE && axis.axis_errors_!=AXIS_ERROR_WATCHDOG_TIMER_EXPIRED) {
+
+        // Motor error query
+        if (axis.axis_errors_ != AXIS_ERROR_NONE && axis.axis_errors_ != AXIS_ERROR_WATCHDOG_TIMER_EXPIRED) {
             Request_Get_Motor_Error_msg_t msg;
-            if(!axis.send_silent(msg)){
-                ROS_ERROR_THROTTLE(1,"[odrive_hi] Failed to request motor error. Node id=%d",axis.node_id_);
+            if (!axis.send_silent(msg)) {
+                ROS_ERROR_THROTTLE(1, "[odrive_hi] Failed to request motor error. Node id=%d", axis.node_id_);
             }
+        }
+
+        // SDO request send
+        if (axis.sdo_transaction_ &&
+            axis.sdo_transaction_->sdo_state_ == SDOTransaction::SDO_PENDING) {
+            SDO_Request_msg_t msg;
+            msg.Opcode = axis.sdo_transaction_->sdo_opcode_;
+            msg.Endpoint_ID = axis.sdo_transaction_->sdo_endpoint_id_;
+            msg.Value = axis.sdo_transaction_->sdo_request_value_;
+            axis.send_silent(msg);
+            axis.sdo_transaction_->sdo_state_ = SDOTransaction::SDO_WAITING;
+        }
+
+        // Skip setpoints while axis is still initializing
+        if (axis.init_state_ != INIT_IDLE) {
+            continue;
+        }
+
+        // Skip setpoints during send-failure cooldown
+        bool cooldown_active = !axis.send_fail_last_time_.isZero() &&
+                               (time - axis.send_fail_last_time_).toSec() < SEND_FAIL_COOLDOWN;
+        if (cooldown_active) {
+            continue;
         }
 
         bool sent = true;
@@ -246,19 +306,8 @@ void ODriveHardwareInterface::write(const ros::Time& /*time*/, const ros::Durati
             msg.Input_Torque = axis.torque_setpoint_;
             sent = axis.send_silent(msg);
         }
-        if(!sent){
-            ROS_ERROR_THROTTLE(1,"[odrive_hi] Failed to send can cmd message. Node id=%d",axis.node_id_);
-        }
-
-        // SDO request send
-        if (axis.sdo_transaction_ &&
-            axis.sdo_transaction_->sdo_state_ == SDOTransaction::SDO_PENDING) {
-            SDO_Request_msg_t msg;
-            msg.Opcode = axis.sdo_transaction_->sdo_opcode_;
-            msg.Endpoint_ID = axis.sdo_transaction_->sdo_endpoint_id_;
-            msg.Value = axis.sdo_transaction_->sdo_request_value_;
-            axis.send_silent(msg);
-            axis.sdo_transaction_->sdo_state_ = SDOTransaction::SDO_WAITING;
+        if (!sent) {
+            ROS_ERROR_THROTTLE(1, "[odrive_hi] Failed to send can cmd message. Node id=%d", axis.node_id_);
         }
 
         // no control enabled — don't send any setpoint
@@ -318,6 +367,15 @@ void ODriveHardwareInterface::doSwitch(
 }
 
 void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
+    // CAN error frame (kernel sends when BusErrorReporting=yes)
+    if (frame.can_id & CAN_ERR_FLAG) {
+	if (frame.data[0] & CAN_ERR_ACK) {
+            ROS_WARN_THROTTLE(1, "[odrive_hi] CAN frame not acknowledged (receiver offline)");
+        } else {
+            ROS_ERROR_THROTTLE(1, "[odrive_hi] CAN error id=0x%x, d0=0x%x",frame.can_id,frame.data[0]);
+	}        
+	return;
+    }
     bool axis_found = false;
     uint32_t can_id = (frame.can_id >> 5);
     //uint8_t can_cmd = frame.can_id & 0x1f;
@@ -333,7 +391,7 @@ void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
     }
 }
 
-void ODriveHardwareInterface::set_axis_command_mode(const Axis& axis) {
+void ODriveHardwareInterface::set_axis_command_mode(Axis& axis) {
     if (!axis.connected) {
         ROS_INFO("[odrive_hi] Skip control mode setup, axis '%s' is not connected. ",axis.joint_name_.c_str());
         return;

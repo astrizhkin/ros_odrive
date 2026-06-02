@@ -20,6 +20,8 @@ bool SocketCanIntf::init(const std::string& interface, EpollEventLoop* event_loo
         std::cerr << "Failed to create socket" << std::endl;
         return false;
     }
+    canid_t err_mask = CAN_ERR_MASK;
+    setsockopt(socket_id_, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &err_mask, sizeof(err_mask));
 
     struct ifreq ifr;
     std::strcpy(ifr.ifr_name, interface_.c_str());
@@ -80,11 +82,13 @@ bool SocketCanIntf::send_can_frame(const can_frame& frame) {
     }
     ssize_t nbytes = write(socket_id_, &frame, sizeof(frame));
     if (nbytes == -1) {
+        //if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS) {
+        //    // TX queue full (CAN interface error-passive/bus-off) — return false
+        //    return false;
+        //}
         std::cerr << "Failed to send CAN frame id=0x" << std::hex << frame.can_id
                   << " errno=" << errno << " (" << strerror(errno) << ")" << std::endl;
         return false;
-        //std::cerr << "Failed to send CAN frame id=" << frame.can_id << std::endl;
-        //return false;
     }
 
     return true;

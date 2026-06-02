@@ -43,7 +43,7 @@ public:
 
 private:
     void on_can_msg(const can_frame& frame);
-    void set_axis_command_mode(const Axis& axis);
+    void set_axis_command_mode(Axis& axis);
 
     bool active_;
     EpollEventLoop event_loop_;
@@ -66,6 +66,8 @@ private:
     bool sdo_service_callback(odrive_ros_control::SDORequest& req, odrive_ros_control::SDOResponse& res);
 };
 
+enum InitState { INIT_IDLE, INIT_DELAY, INIT_SENT };
+
 struct Axis {
     Axis(SocketCanIntf* can_intf, uint32_t node_id, const std::string& joint_name)
         : can_intf_(can_intf), node_id_(node_id), joint_name_(joint_name) {}
@@ -77,6 +79,12 @@ struct Axis {
     std::string joint_name_;
 
     bool connected = false;
+    ros::Time send_fail_last_time_ = {};
+
+    // Reconnection init state machine
+    InitState init_state_ = INIT_IDLE;
+    ros::Time init_start_time_;
+    uint32_t init_retry_count_ = 0;
 
     // Commands (ros_control => ODrives)
     double pos_setpoint_    = 0.0; // [rad]
@@ -132,22 +140,28 @@ struct Axis {
     std::unique_ptr<SDOTransaction> sdo_transaction_ = nullptr;
 
     template <typename T>
-    bool send_silent(const T& msg) const {
+    bool send_silent(const T& msg) {
         struct can_frame frame;
         frame.can_id  = node_id_ << 5 | msg.cmd_id;
         frame.can_dlc = msg.msg_length;
         msg.encode_buf(frame.data);
-        return can_intf_->send_can_frame(frame);
+        bool ok = can_intf_->send_can_frame(frame);
+        if (ok) {
+            send_fail_last_time_ = {};
+        } else {
+            send_fail_last_time_ = ros::Time::now();
+        }
+        return ok;
     }
 
     template <typename T>
-    bool send_log(const T& msg, const std::string& message) const {
-        bool success = this->send_silent(msg);
-        uint8_t can_id  = node_id_ << 5 | msg.cmd_id;
-        if(!success) {
-            ROS_ERROR("[odrive_hi] Failed to send CAN frame id=0x%x, %s",can_id,message.c_str());
+    bool send_log(const T& msg, const std::string& message) {
+        uint8_t can_id = node_id_ << 5 | msg.cmd_id;
+        bool ok = send_silent(msg);
+        if (!ok) {
+            ROS_ERROR("[odrive_hi] Failed to send CAN frame id=0x%x, %s", can_id, message.c_str());
         }
-        return success;
+        return ok;
     }
 
 };
