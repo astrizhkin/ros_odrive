@@ -1,5 +1,6 @@
 #include "can_helpers.hpp"
 #include "can_simple_messages_5.hpp"
+#include "can_error_formatter.hpp"
 #include "odrive_enums.h"
 #include "odrive_can/ODriveStatus.h"
 #include "odrive_can/ControllerStatus.h"
@@ -366,15 +367,25 @@ void ODriveHardwareInterface::doSwitch(
     }
 }
 
+canid_t prev_error = 0;
+double last_print_time_sec = 0;
+
 void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
     // CAN error frame (kernel sends when BusErrorReporting=yes)
     if (frame.can_id & CAN_ERR_FLAG) {
-	if (frame.data[0] & CAN_ERR_ACK) {
-            ROS_WARN_THROTTLE(1, "[odrive_hi] CAN frame not acknowledged (receiver offline)");
+        double now = ros::Time::now().toSec();
+        if (frame.can_id != prev_error) {
+            std::string desc = can_utils::format_can_error_frame(frame);
+            ROS_ERROR("[odrive_hi] CAN error (new): %s", desc.c_str());
+            last_print_time_sec = now;
         } else {
-            ROS_ERROR_THROTTLE(1, "[odrive_hi] CAN error id=0x%x, d0=0x%x",frame.can_id,frame.data[0]);
-	}        
-	return;
+            if(now - last_print_time_sec > 2.0) {
+                std::string desc = can_utils::format_can_error_frame(frame);
+                ROS_WARN("[odrive_hi] CAN error: %s", desc.c_str());
+                last_print_time_sec = now;
+            }
+        }
+    	return;
     }
     bool axis_found = false;
     uint32_t can_id = (frame.can_id >> 5);
