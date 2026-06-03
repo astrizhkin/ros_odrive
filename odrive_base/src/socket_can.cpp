@@ -86,12 +86,19 @@ bool SocketCanIntf::send_can_frame(const can_frame& frame) {
         //    // TX queue full (CAN interface error-passive/bus-off) — return false
         //    return false;
         //}
+        send_fail_last_time_ = ros::Time::now();
         std::cerr << "Failed to send CAN frame id=0x" << std::hex << frame.can_id
                   << " errno=" << errno << " (" << strerror(errno) << ")" << std::endl;
         return false;
     }
 
+    send_fail_last_time_ = {};
     return true;
+}
+
+bool SocketCanIntf::is_send_cooldown_active(double cooldown_sec) const {
+    return !send_fail_last_time_.isZero() &&
+           (ros::Time::now() - send_fail_last_time_).toSec() < cooldown_sec;
 }
 
 void SocketCanIntf::on_socket_event(uint32_t mask) {

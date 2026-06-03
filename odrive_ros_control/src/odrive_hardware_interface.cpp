@@ -151,7 +151,6 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
                 //init stamps with current time so we can collect mesages after connection
                 axis.ctrl_sent_status_stamp_ = time;
                 axis.odrv_sent_status_stamp_ = time;
-                axis.send_fail_last_time_ = {};
                 axis.init_start_time_ = time;
                 axis.init_retry_count_ = 0;
                 axis.init_state_ = INIT_DELAY;
@@ -253,9 +252,14 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
 }
 
 void ODriveHardwareInterface::write(const ros::Time& time, const ros::Duration& /*period*/) {
+    // Global CAN bus cooldown — blocks all axis setpoints after a send failure
+    bool cooldown_active = can_intf_.is_send_cooldown_active(SEND_FAIL_COOLDOWN);
+    if(!cooldown_active && cooldown_frames_drop>0) {
+        ROS_WARN("[odrive_hi] CAN cooldown droped %d frames", cooldown_frames_drop);
+        cooldown_frames_drop = 0;
+    }
     for (auto& axis : axes_) {
         if (!axis.connected) {
-            axis.send_fail_last_time_ = {};
             continue;
         }
 
@@ -275,10 +279,8 @@ void ODriveHardwareInterface::write(const ros::Time& time, const ros::Duration& 
             continue;
         }
 
-        // Skip setpoints during send-failure cooldown
-        bool cooldown_active = !axis.send_fail_last_time_.isZero() &&
-                               (time - axis.send_fail_last_time_).toSec() < SEND_FAIL_COOLDOWN;
         if (cooldown_active) {
+            cooldown_frames_drop++;
             continue;
         }
 

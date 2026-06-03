@@ -53,6 +53,7 @@ private:
     double last_print_time_sec = 0;
     uint32_t can_error_total_count = 0;
     uint32_t can_error_repeating_count = 0;
+    uint32_t cooldown_frames_drop = 0;
 
     bool active_;
     EpollEventLoop event_loop_;
@@ -88,7 +89,6 @@ struct Axis {
     std::string joint_name_;
 
     bool connected = false;
-    ros::Time send_fail_last_time_ = {};
 
     // Reconnection init state machine
     InitState init_state_ = INIT_IDLE;
@@ -154,13 +154,7 @@ struct Axis {
         frame.can_id  = node_id_ << 5 | msg.cmd_id;
         frame.can_dlc = msg.msg_length;
         msg.encode_buf(frame.data);
-        bool ok = can_intf_->send_can_frame(frame);
-        if (ok) {
-            send_fail_last_time_ = {};
-        } else {
-            send_fail_last_time_ = ros::Time::now();
-        }
-        return ok;
+        return can_intf_->send_can_frame(frame);
     }
 
     template <typename T>
