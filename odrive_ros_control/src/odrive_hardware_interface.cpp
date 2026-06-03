@@ -268,15 +268,7 @@ void ODriveHardwareInterface::write(const ros::Time& time, const ros::Duration& 
         }
 
         // SDO request send
-        if (axis.sdo_transaction_ &&
-            axis.sdo_transaction_->sdo_state_ == SDOTransaction::SDO_PENDING) {
-            SDO_Request_msg_t msg;
-            msg.Opcode = axis.sdo_transaction_->sdo_opcode_;
-            msg.Endpoint_ID = axis.sdo_transaction_->sdo_endpoint_id_;
-            msg.Value = axis.sdo_transaction_->sdo_request_value_;
-            axis.send_silent(msg);
-            axis.sdo_transaction_->sdo_state_ = SDOTransaction::SDO_WAITING;
-        }
+        write_sdo(time, axis);
 
         // Skip setpoints while axis is still initializing
         if (axis.init_state_ != INIT_IDLE) {
@@ -290,23 +282,7 @@ void ODriveHardwareInterface::write(const ros::Time& time, const ros::Duration& 
             continue;
         }
 
-        bool sent = true;
-        if (axis.pos_input_enabled_) {
-            Set_Input_Pos_msg_t msg;
-            msg.Input_Pos   = axis.pos_setpoint_ / (2 * M_PI);
-            msg.Vel_FF      = axis.vel_input_enabled_    ? (axis.vel_setpoint_ / (2 * M_PI)) : 0.0f;
-            msg.Torque_FF   = axis.torque_input_enabled_ ? axis.torque_setpoint_              : 0.0f;
-            sent = axis.send_silent(msg);
-        } else if (axis.vel_input_enabled_) {
-            Set_Input_Vel_msg_t msg;
-            msg.Input_Vel        = axis.vel_setpoint_ / (2 * M_PI);
-            msg.Input_Torque_FF  = axis.torque_input_enabled_ ? axis.torque_setpoint_ : 0.0f;
-            sent = axis.send_silent(msg);
-        } else if (axis.torque_input_enabled_) {
-            Set_Input_Torque_msg_t msg;
-            msg.Input_Torque = axis.torque_setpoint_;
-            sent = axis.send_silent(msg);
-        }
+        bool sent = write_setpoint(time, axis);
         if (!sent) {
             ROS_ERROR_THROTTLE(1, "[odrive_hi] Failed to send can cmd message. Node id=%d", axis.node_id_);
         }
@@ -314,6 +290,42 @@ void ODriveHardwareInterface::write(const ros::Time& time, const ros::Duration& 
         // no control enabled — don't send any setpoint
     }
 }
+
+bool ODriveHardwareInterface::write_setpoint(const ros::Time& /*time*/, Axis& axis) {
+    bool sent = false;
+    if (axis.pos_input_enabled_) {
+        Set_Input_Pos_msg_t msg;
+        msg.Input_Pos   = axis.pos_setpoint_ / (2 * M_PI);
+        msg.Vel_FF      = axis.vel_input_enabled_    ? (axis.vel_setpoint_ / (2 * M_PI)) : 0.0f;
+        msg.Torque_FF   = axis.torque_input_enabled_ ? axis.torque_setpoint_              : 0.0f;
+        sent = axis.send_silent(msg);
+    } else if (axis.vel_input_enabled_) {
+        Set_Input_Vel_msg_t msg;
+        msg.Input_Vel        = axis.vel_setpoint_ / (2 * M_PI);
+        msg.Input_Torque_FF  = axis.torque_input_enabled_ ? axis.torque_setpoint_ : 0.0f;
+        sent = axis.send_silent(msg);
+    } else if (axis.torque_input_enabled_) {
+        Set_Input_Torque_msg_t msg;
+        msg.Input_Torque = axis.torque_setpoint_;
+        sent = axis.send_silent(msg);
+    }
+    return sent;
+}
+
+bool ODriveHardwareInterface::write_sdo(const ros::Time& /*time*/, Axis& axis) {
+    bool sent = false;
+    if (axis.sdo_transaction_ &&
+        axis.sdo_transaction_->sdo_state_ == SDOTransaction::SDO_PENDING) {
+        SDO_Request_msg_t msg;
+        msg.Opcode = axis.sdo_transaction_->sdo_opcode_;
+        msg.Endpoint_ID = axis.sdo_transaction_->sdo_endpoint_id_;
+        msg.Value = axis.sdo_transaction_->sdo_request_value_;
+        sent = axis.send_silent(msg);
+        axis.sdo_transaction_->sdo_state_ = SDOTransaction::SDO_WAITING;
+    }
+    return sent;
+}
+
 
 void ODriveHardwareInterface::doSwitch(
     const std::list<hardware_interface::ControllerInfo>& start_list,
@@ -366,11 +378,6 @@ void ODriveHardwareInterface::doSwitch(
         }
     }
 }
-
-canid_t prev_error = 0;
-double last_print_time_sec = 0;
-uint32_t can_error_total_count = 0;
-uint32_t can_error_repeating_count = 0;
 
 void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
     // CAN error frame (kernel sends when BusErrorReporting=yes)

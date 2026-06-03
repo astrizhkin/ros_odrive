@@ -45,6 +45,15 @@ private:
     void on_can_msg(const can_frame& frame);
     void set_axis_command_mode(Axis& axis);
 
+    bool write_setpoint(const ros::Time& time, Axis& axis);
+    bool write_sdo(const ros::Time& time, Axis& axis);
+
+    // Global bus/connection error handling
+    canid_t prev_error = 0;
+    double last_print_time_sec = 0;
+    uint32_t can_error_total_count = 0;
+    uint32_t can_error_repeating_count = 0;
+
     bool active_;
     EpollEventLoop event_loop_;
     std::vector<Axis> axes_;
