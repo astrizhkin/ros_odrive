@@ -16,7 +16,7 @@ using namespace odrive_ros_control;
 static constexpr double STATUS_TIMEOUT_SEC   = 1.0;
 static constexpr double HEARTBEAT_TIMEOUT_SEC = 0.5;
 static constexpr double INIT_DELAY_SEC        = 0.2;
-static constexpr double INIT_CONFIRM_SEC      = 0.5;
+static constexpr double INIT_CONFIRM_SEC      = 2.0;
 static constexpr uint32_t INIT_RETRY_LIMIT    = 3;
 static constexpr double SEND_FAIL_COOLDOWN    = 0.2;
 
@@ -147,7 +147,7 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
             bool prev_connected_state = axis.connected;
             axis.connected = true;
             if (!prev_connected_state) {
-                ROS_INFO("[odrive_hi] '%s': axis connected, axis state %d, axis errors %d",axis.joint_name_.c_str(),axis.axis_state_, axis.axis_errors_);
+                ROS_INFO("[odrive_hi] '%s': axis connected, axis state %d, axis error 0x%x",axis.joint_name_.c_str(),axis.axis_state_, axis.axis_errors_);
                 //init stamps with current time so we can collect mesages after connection
                 axis.ctrl_sent_status_stamp_ = time;
                 axis.odrv_sent_status_stamp_ = time;
