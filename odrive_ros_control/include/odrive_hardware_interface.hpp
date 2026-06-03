@@ -45,8 +45,10 @@ private:
     void on_can_msg(const can_frame& frame);
     void set_axis_command_mode(Axis& axis);
 
+    void init_steps(const ros::Time& time, Axis& axis);
     bool write_setpoint(const ros::Time& time, Axis& axis);
     bool write_sdo(const ros::Time& time, Axis& axis);
+    void query_errors(const ros::Time& time, Axis& axis);
 
     // Global bus/connection error handling
     canid_t prev_error = 0;
