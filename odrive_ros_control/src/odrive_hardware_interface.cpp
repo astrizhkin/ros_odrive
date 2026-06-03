@@ -369,19 +369,25 @@ void ODriveHardwareInterface::doSwitch(
 
 canid_t prev_error = 0;
 double last_print_time_sec = 0;
+uint32_t can_error_total_count = 0;
+uint32_t can_error_repeating_count = 0;
 
 void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
     // CAN error frame (kernel sends when BusErrorReporting=yes)
     if (frame.can_id & CAN_ERR_FLAG) {
         double now = ros::Time::now().toSec();
+        can_error_total_count++;
         if (frame.can_id != prev_error) {
             std::string desc = can_utils::format_can_error_frame(frame);
-            ROS_ERROR("[odrive_hi] CAN error (new): %s", desc.c_str());
+            ROS_ERROR("[odrive_hi] CAN error (new): %s, errors %d", desc.c_str(),can_error_total_count);
             last_print_time_sec = now;
+            prev_error = frame.can_id;
+            can_error_repeating_count = 0;
         } else {
+            can_error_repeating_count++;
             if(now - last_print_time_sec > 2.0) {
                 std::string desc = can_utils::format_can_error_frame(frame);
-                ROS_WARN("[odrive_hi] CAN error: %s", desc.c_str());
+                ROS_ERROR("[odrive_hi] CAN error (repeat): %s, errors %d, repeating %d", desc.c_str(),can_error_total_count, can_error_repeating_count);
                 last_print_time_sec = now;
             }
         }
