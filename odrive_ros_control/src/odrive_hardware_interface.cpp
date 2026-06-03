@@ -137,15 +137,19 @@ void ODriveHardwareInterface::read(const ros::Time& time, const ros::Duration& /
         bool odrv_complete = (axis.odrv_pub_flag_ == 0b111);
 
         bool connected_now = (time - axis.last_heartbeat_stamp_).toSec() < HEARTBEAT_TIMEOUT_SEC;
+        bool prev_connected_state = axis.connected;
+        axis.connected = connected_now;
+
         if (!connected_now) {
-            axis.connected = false;
             axis.init_state_ = INIT_IDLE;
-            ROS_WARN_THROTTLE(5.0, "[odrive_hi] '%s': disconnected, no heartbeat for %.1fs",
-                axis.joint_name_.c_str(),
-                (time - axis.last_heartbeat_stamp_).toSec());
+            if (prev_connected_state) {
+                ROS_WARN("[odrive_hi] '%s': disconnected, no heartbeat for %.1fs",
+                    axis.joint_name_.c_str(), (time - axis.last_heartbeat_stamp_).toSec());
+            } else {
+                ROS_WARN_THROTTLE(10.0, "[odrive_hi] '%s': still disconnected, no heartbeat for %.1fs",
+                    axis.joint_name_.c_str(), (time - axis.last_heartbeat_stamp_).toSec());
+            }
         } else {
-            bool prev_connected_state = axis.connected;
-            axis.connected = true;
             if (!prev_connected_state) {
                 ROS_INFO("[odrive_hi] '%s': axis connected, axis state %d, axis error 0x%x",axis.joint_name_.c_str(),axis.axis_state_, axis.axis_errors_);
                 //init stamps with current time so we can collect mesages after connection
@@ -399,7 +403,7 @@ void ODriveHardwareInterface::on_can_msg(const can_frame& frame) {
         can_error_total_count++;
         if (frame.can_id != prev_error) {
             std::string desc = can_utils::format_can_error_frame(frame);
-            ROS_ERROR("[odrive_hi] CAN error (new): %s, errors %d", desc.c_str(),can_error_total_count);
+            ROS_ERROR("[odrive_hi] CAN error (new): %s, errors %d, previous repeated %d times", desc.c_str(),can_error_total_count, can_error_repeating_count);
             last_print_time_sec = now;
             prev_error = frame.can_id;
             can_error_repeating_count = 0;
