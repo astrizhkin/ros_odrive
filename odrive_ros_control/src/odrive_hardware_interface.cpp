@@ -503,6 +503,14 @@ bool ODriveHardwareInterface::sdo_service_callback(odrive_ros_control::SDOReques
     // Assign to axis (replaces any previous transaction)
     target->sdo_transaction_ = std::move(transaction);
 
+    // Async (fire-and-forget): return immediately without waiting for response
+    if (req.async) {
+        res.success = true;
+        res.return_code = 0;
+        res.value = 0;
+        return true;
+    }
+
     // Wait for the main loop to complete the transaction
     std::unique_lock<std::mutex> lock(target->sdo_transaction_->sdo_mutex_);
     target->sdo_transaction_->sdo_cv_.wait(lock, [target]() {
