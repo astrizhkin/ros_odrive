@@ -20,6 +20,7 @@ struct SDOTransaction {
     uint32_t sdo_request_value_ = 0;
     uint32_t sdo_response_value_ = 0;
     uint8_t  sdo_return_code_ = 0;
+    bool     sdo_async_ = false;
     ros::Time sdo_timeout_start_;
     float    sdo_timeout_sec_ = 0.5f;
     std::mutex sdo_mutex_;

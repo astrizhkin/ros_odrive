@@ -499,6 +499,7 @@ bool ODriveHardwareInterface::sdo_service_callback(odrive_ros_control::SDOReques
     transaction->sdo_timeout_sec_ = req.timeout_sec > 0.0f ? req.timeout_sec : 0.5f;
     transaction->sdo_timeout_start_ = ros::Time::now();
     transaction->sdo_state_ = SDOTransaction::SDO_PENDING;
+    transaction->sdo_async_ = req.async;
 
     // Assign to axis (replaces any previous transaction)
     target->sdo_transaction_ = std::move(transaction);
@@ -645,6 +646,15 @@ void Axis::on_can_msg(const ros::Time& timestamp, const can_frame& frame) {
             msg.decode_buf(frame.data);
             sdo_transaction_->sdo_response_value_ = msg.Value;
             sdo_transaction_->sdo_return_code_ = msg.Return_Code;
+            if (sdo_transaction_->sdo_async_) {
+                if (msg.Return_Code == 0) {
+                    ROS_INFO("[odrive_hi] SDO async response: endpoint=0x%x, value=0x%x, return_code=%u %s",
+                             msg.Endpoint_ID, msg.Value, msg.Return_Code, joint_name_.c_str());
+                } else {
+                    ROS_WARN("[odrive_hi] SDO async error: endpoint=0x%x, value=0x%x, return_code=%u %s",
+                             msg.Endpoint_ID, msg.Value, msg.Return_Code, joint_name_.c_str());
+                }
+            }
             sdo_transaction_->sdo_state_ = SDOTransaction::SDO_DONE;
             sdo_transaction_->sdo_cv_.notify_one();
             break;
